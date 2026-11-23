@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants` and `validate`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `validate` and `duplicates`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -137,13 +137,37 @@ report a duplicated xref, so `DUPLICATE_XREF` appears once per source.
 Duplicate detection (`POTENTIAL_DUPLICATE`) is slow on large files and runs
 only with `--min-severity info`.
 
+`duplicates` reports people in one file who may be the same as people in
+another, for reconciling overlapping trees. Each line is a candidate pair: the
+score (0 to 1, from gedcom-go's duplicate detection), then xref, name, birth
+and death from the first file, then the same from the second. Pairs are
+candidates for review, not conclusions; nothing is merged or written:
+
+```sh
+gedcom duplicates old-export.ged family.ged
+gedcom duplicates --min-score 0.9 old-export.ged family.ged
+gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, .b.xref]'
+```
+
+```text
+0.90	@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978	@I7@	Ada /Example/	1901
+0.70	@I2@	Ben /Example/	21 JUL 1899		@I1@	Ben /Example/
+```
+
+Xrefs are each file's own, so `@I1@` can be a different person on each side.
+In JSON each pair is `{"score", "a", "b"}`, with `a` and `b` in `list indi`'s
+keys. `--min-score` (default `0.7`) drops pairs whose printed score is lower. When the library
+skipped or shortened comparisons (very large surname groups, very long given
+names) a warning on stderr says so, and some pairs may be missing.
+
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 ## Conventions
 
 These hold for every command, so scripts and agents can rely on them:
 
-- **Results go to stdout, diagnostics to stderr.** Stderr is empty on success.
+- **Results go to stdout, diagnostics to stderr.** Stderr is empty on
+  success, except for a warning that a result is incomplete (`duplicates`).
 - **`--format json`** gives machine-readable output; the default is text.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error) or `validate` found errors, `2` the command line was wrong.
