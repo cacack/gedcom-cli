@@ -3,11 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 
-	"github.com/cacack/gedcom-go/v3/decoder"
 	"github.com/spf13/cobra"
 )
 
@@ -47,15 +44,9 @@ func newInfoCmd() *cobra.Command {
 }
 
 func readInfo(path string) (*fileInfo, error) {
-	f, err := os.Open(filepath.Clean(path))
+	doc, err := decodeFile(path)
 	if err != nil {
 		return nil, err
-	}
-	defer f.Close()
-
-	doc, err := decoder.Decode(f)
-	if err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
 	}
 
 	info := &fileInfo{

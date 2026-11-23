@@ -48,6 +48,18 @@ Records:       1272
   ...
 ```
 
+`get` prints single records by xref, in the order given, as the GEDCOM lines of
+each record:
+
+```sh
+gedcom get family.ged @I1@
+gedcom get family.ged I1 F1          # the @ delimiters are optional
+gedcom get --format json family.ged @I1@
+```
+
+`get --format json` prints an array of records in gedcom-go's entity shape,
+which may change with the library.
+
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 ## Conventions
