@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -20,13 +19,15 @@ import (
 var convertTargets = []string{string(gedcom.Version551), string(gedcom.Version70)}
 
 // convertReport is the library's ConversionReport with lowercase keys, plus
-// the files involved and whether the output was written.
+// the files involved, whether the output was written, and what the decoder
+// could not read cleanly in the input.
 type convertReport struct {
 	Input            string           `json:"input"`
 	Output           string           `json:"output"`
 	Written          bool             `json:"written"`
 	SourceVersion    string           `json:"sourceVersion"`
 	TargetVersion    string           `json:"targetVersion"`
+	Decode           []finding        `json:"decode"`
 	DataLoss         []dataLossItem   `json:"dataLoss"`
 	Dropped          []conversionNote `json:"dropped"`
 	Approximated     []conversionNote `json:"approximated"`
@@ -63,14 +64,18 @@ func newConvertCmd() *cobra.Command {
 		Long: `Rewrite a file as GEDCOM 5.5.1 or 7.0 with gedcom-go's converter, writing
 the result to a new file in UTF-8 whatever the input's encoding (ANSEL, ASCII,
 UTF-16 or a code page). The input is never modified, and the output may not be
-the input file.
+the input file. An existing output file is replaced, and only once the whole
+result is ready: a failed conversion leaves it as it was.
 
 Lines the conversion does not change keep their layout (indentation, line
 terminators, blank lines), so converting a UTF-8 file to the version it already
 has writes it back byte-identical.
 
-The report on stdout is the library's conversion report, most serious first:
+The report on stdout starts with what the decoder could not read cleanly in
+the input; a line it could not parse is copied to the output as it was. Then
+comes the library's conversion report, most serious first:
 
+  decode           decoder diagnostics: severity, code, line, message
   data loss        features the target version cannot hold, with the records
   dropped          each value that was dropped: path, original, result, reason
   approximated     values mapped to a near but not exact equivalent
@@ -139,6 +144,7 @@ func convertFile(in, out string, to gedcom.Version, failOnLoss bool) (*convertRe
 		return nil, fmt.Errorf("convert %s: %w", in, err)
 	}
 	report := newConvertReport(in, out, lib)
+	report.Decode = decodeFindings(res.Diagnostics)
 	if errors.Is(err, converter.ErrDataLoss) {
 		return report, fmt.Errorf("conversion of %s to %s would lose data (%s); %s not written",
 			in, to, plural(len(lib.DataLoss), "item", "items"), out)
@@ -147,16 +153,42 @@ func convertFile(in, out string, to gedcom.Version, failOnLoss bool) (*convertRe
 		return nil, fmt.Errorf("convert %s: %w", in, err)
 	}
 
-	// Encode in full before creating the file, so a failure leaves no partial output.
-	var buf bytes.Buffer
-	if err := encodeDocument(&buf, converted); err != nil {
-		return nil, fmt.Errorf("encode %s: %w", out, err)
-	}
-	if err := os.WriteFile(filepath.Clean(out), buf.Bytes(), 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Clean(out), func(w io.Writer) error {
+		return encodeDocument(w, converted)
+	}); err != nil {
 		return nil, err
 	}
 	report.Written = true
 	return report, nil
+}
+
+// writeFileAtomic writes path through a temporary file in the same directory,
+// renamed over path only once write and the sync succeed, so a failure leaves
+// no partial file and an existing file at path untouched.
+func writeFileAtomic(path string, write func(io.Writer) error) (err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if err = write(tmp); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err = tmp.Chmod(0o644); err != nil {
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func newConvertReport(in, out string, r *gedcom.ConversionReport) *convertReport {
@@ -217,6 +249,11 @@ func writeConvertText(w io.Writer, r *convertReport) error {
 		return lines
 	}
 
+	var decode []string
+	for _, f := range r.Decode {
+		decode = append(decode, joinFields(f.Severity, f.Code, fmt.Sprintf("line %d", f.Line), f.Message))
+	}
+	section("decode", decode)
 	var loss []string
 	for _, d := range r.DataLoss {
 		loss = append(loss, joinFields(d.Feature, d.Reason, strings.Join(d.Records, " ")))

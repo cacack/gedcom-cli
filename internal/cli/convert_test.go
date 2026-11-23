@@ -235,3 +235,92 @@ func TestConvertExitCodes(t *testing.T) {
 		t.Errorf("a failed invocation wrote %s", out)
 	}
 }
+
+// malformed is a GEDCOM 5.5.1 file with a line the decoder cannot parse.
+const malformed = "0 HEAD\n" +
+	"1 GEDC\n" +
+	"2 VERS 5.5.1\n" +
+	"2 FORM LINEAGE-LINKED\n" +
+	"1 CHAR UTF-8\n" +
+	"0 @I1@ INDI\n" +
+	"1 NAME Ada /Example/\n" +
+	"not a line\n" +
+	"0 TRLR\n"
+
+func TestConvertReportsDecodeDiagnostics(t *testing.T) {
+	in := writeTemp(t, "malformed.ged", malformed)
+	out := filepath.Join(t.TempDir(), "out.ged")
+
+	code, stdout, stderr := run(t, "convert", in, "--to", "7.0", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "decode (") || !strings.Contains(stdout, "\tline 8\t") {
+		t.Errorf("stdout has no decode section naming line 8:\n%s", stdout)
+	}
+
+	code, stdout, stderr = run(t, "convert", "--format", "json", in, "--to", "7.0", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+	}
+	var got convertReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	found := false
+	for _, f := range got.Decode {
+		found = found || (f.Source == sourceDecode && f.Line == 8)
+	}
+	if !found {
+		t.Errorf("decode = %+v, want a finding on line 8", got.Decode)
+	}
+}
+
+func TestConvertCleanInputHasEmptyDecode(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "out.ged")
+	_, stdout, _ := run(t, "convert", "--format", "json", records, "--to", "5.5.1", "-o", out)
+	if !strings.Contains(stdout, `"decode": []`) {
+		t.Errorf("want an empty decode list:\n%s", stdout)
+	}
+}
+
+func TestConvertReplacesExistingOutput(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.ged")
+	if err := os.WriteFile(out, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := run(t, "convert", records, "--to", "5.5.1", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	want, err := os.ReadFile(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSameBytes(t, got, want)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("want only out.ged in the directory, got %v", entries)
+	}
+}
+
+func TestConvertFailOnLossKeepsExistingOutput(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "out.ged")
+	if err := os.WriteFile(out, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := run(t, "convert", "--fail-on-loss", lossy, "--to", "5.5.1", "-o", out); code != ExitError {
+		t.Fatalf("exit = %d, want %d", code, ExitError)
+	}
+	if got, _ := os.ReadFile(out); string(got) != "old\n" {
+		t.Errorf("existing output changed: %q", got)
+	}
+}
