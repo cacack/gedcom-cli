@@ -146,7 +146,9 @@ func rowsOf[T any](entities []T, limit int, toRow func(T) row) []row {
 	return rows
 }
 
-func newIndiRow(i *gedcom.Individual) row {
+func newIndiRow(i *gedcom.Individual) row { return indiRowOf(i) }
+
+func indiRowOf(i *gedcom.Individual) indiRow {
 	return indiRow{
 		XRef:  i.XRef,
 		Name:  i.FullName(),

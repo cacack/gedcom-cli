@@ -6,8 +6,8 @@ GEDCOM genealogy files. It is a thin wrapper over
 terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
-**Status: early.** The commands so far are `info`, `get`, `list` and
-`validate`. Flags and JSON output may change until v1.0.
+**Status: early.** The commands so far are `info`, `get`, `list`,
+`ancestors`, `descendants` and `validate`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -85,6 +85,27 @@ gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Exam
 a record that puts `TITL` and `FORM` beside `FILE` instead of under it (the
 GEDCOM 5.5 layout) lists its title and format empty; `get` shows the whole
 record.
+
+`ancestors` and `descendants` walk one person's line by generation (1 is
+parents or children, 2 grandparents or grandchildren), one row per relative in
+`list indi`'s fields with the generation first. `--generations N` stops after
+generation N; 0, the default, walks the whole line:
+
+```sh
+gedcom ancestors family.ged @I1@
+gedcom descendants --generations 2 family.ged I1
+gedcom ancestors --format json family.ged @I1@ | jq '.[] | select(.generation == 3)'
+```
+
+```text
+1	@I2@	Bert /Example/	1920	1990
+1	@I3@	Cleo /Sample/
+2	@I4@	Dan /Example/
+```
+
+Rows are in generation order, then in gedcom-go's order. A person reached by
+more than one path (pedigree collapse) is listed once, at the generation of the
+shortest path.
 
 `validate` reports what the decoder could not read cleanly (`decode`) and what
 gedcom-go's validator finds in the records (`validate`), grouped by severity
