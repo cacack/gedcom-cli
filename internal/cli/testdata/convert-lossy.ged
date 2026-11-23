@@ -1,0 +1,11 @@
+0 HEAD
+1 GEDC
+2 VERS 7.0
+1 SCHMA
+2 TAG _EX https://example.com/ex
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 EXID 123
+2 TYPE https://example.com/ids
+1 NO MARR
+0 TRLR

@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put` and `delete`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete` and `convert`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -220,6 +220,37 @@ references (1)
 
 An xref the file defines more than once is refused, since `delete` could not
 tell those records apart.
+
+`convert` rewrites a file as GEDCOM 5.5.1 or 7.0 with gedcom-go's converter,
+to a new file named by `-o`, always in UTF-8. It brings a legacy 5.5 ANSEL
+file up to the version and encoding of the rest of a working set:
+
+```sh
+gedcom convert legacy.ged --to 5.5.1 -o legacy-utf8.ged
+gedcom convert --fail-on-loss legacy.ged --to 7.0 -o legacy-v7.ged
+gedcom convert --format json legacy.ged --to 5.5.1 -o out.ged | jq .dataLoss
+```
+
+```text
+legacy.ged: 7.0 -> 5.5.1, wrote out.ged
+data loss (1)
+  EXID tags	Tag not supported in GEDCOM 5.5.1	@I1@
+dropped (1)
+  Individual @I1@ > EXID	EXID		Tag not supported in GEDCOM 5.5.1
+transformations (2)
+  ...
+```
+
+The report is the library's conversion report: what the target version cannot
+hold (`data loss`, with each `dropped` value), what was approximated,
+normalized or preserved, each kind of transformation with a count, and
+validation issues in the result. A conversion that loses data still writes
+the output and exits `0`; with `--fail-on-loss` it writes nothing and exits
+`1`, with the report on stdout. Lines the conversion leaves alone keep their
+layout, so converting a UTF-8 file to the version it already has writes it
+back byte-identical. 5.5 is not a target, since 5.5 does not allow UTF-8.
+Text from an ANSEL file is written decomposed (a letter followed by a
+combining accent), as gedcom-go decodes it.
 
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
