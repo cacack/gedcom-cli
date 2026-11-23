@@ -7,15 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 
+	"github.com/cacack/gedcom-go/v3/decoder"
+	"github.com/cacack/gedcom-go/v3/gedcom"
 	"github.com/spf13/cobra"
 )
 
 // Exit codes. They are part of the command's contract with scripts and agents.
 const (
 	ExitOK    = 0 // the command succeeded
-	ExitError = 1 // the command ran and failed (unreadable file, decode error)
+	ExitError = 1 // the command ran and failed (unreadable file, decode error, validate found errors)
 	ExitUsage = 2 // the command line was wrong (unknown flag, missing argument)
 )
 
@@ -66,7 +70,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().String("format", formatText, `output format: "text" or "json"`)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
-	root.AddCommand(newInfoCmd())
+	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd(), newValidateCmd())
 	return root
 }
 
@@ -90,6 +94,41 @@ func exactArgs(n int) cobra.PositionalArgs {
 		}
 		return nil
 	}
+}
+
+// minArgs is cobra.MinimumNArgs reporting a usageError.
+func minArgs(n int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := cobra.MinimumNArgs(n)(cmd, args); err != nil {
+			return usageError{err}
+		}
+		return nil
+	}
+}
+
+// decodeFile reads and decodes the GEDCOM file at path.
+func decodeFile(path string) (*gedcom.Document, error) {
+	res, err := decodeFileWithDiagnostics(path)
+	if err != nil {
+		return nil, err
+	}
+	return res.Document, nil
+}
+
+// decodeFileWithDiagnostics is decodeFile keeping what the decoder could not
+// read cleanly. Every command opens and decodes its input here.
+func decodeFileWithDiagnostics(path string) (*decoder.DecodeResult, error) {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	res, err := decoder.DecodeWithDiagnostics(f, decoder.DefaultOptions())
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return res, nil
 }
 
 func writeJSON(w io.Writer, v any) error {

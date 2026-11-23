@@ -1,0 +1,33 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Faye /Mock/
+1 SEX F
+this line is not GEDCOM
+1 BIRT
+2 DATE 4 APR 1950
+1 DEAT
+2 DATE 1 JAN 1940
+1 FAMS @F9@
+0 @I2@ INDI
+1 SEX M
+0 @I3@ INDI
+1 NAME Gwen /Mock/
+1 SEX F
+1 BIRT
+2 DATE 7 JUL 1920
+2 PLAC Springfield, Example County
+0 @I4@ INDI
+1 NAME Gwen /Mock/
+1 SEX F
+1 BIRT
+2 DATE 7 JUL 1920
+2 PLAC Springfield, Example County
+0 TRLR

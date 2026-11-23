@@ -1,0 +1,49 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Cora /Sample/
+1 SEX F
+1 BIRT
+2 DATE 3 MAR 1901
+2 PLAC Springfield, Example County
+1 DEAT
+2 DATE 14 NOV 1978
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Dell /Sample/
+1 SEX M
+1 BIRT
+2 DATE 21 JUL 1899
+1 DEAT
+2 DATE 2 FEB 1960
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Edie /Sample/
+1 SEX F
+1 BIRT
+2 DATE 9 SEP 1925
+1 FAMC @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 CHIL @I3@
+1 MARR
+2 DATE 12 JUN 1923
+0 @S1@ SOUR
+1 TITL Sample Family Bible
+1 AUTH Invented Author
+1 REPO @R1@
+0 @R1@ REPO
+1 NAME Example County Archive
+0 @O1@ OBJE
+1 FILE photos/cora.jpg
+2 FORM jpg
+2 TITL Portrait of Cora Sample
+0 TRLR
