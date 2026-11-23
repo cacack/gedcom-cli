@@ -43,7 +43,7 @@ with the library.`,
 			if format == formatJSON {
 				return writeRecordsJSON(cmd.OutOrStdout(), records)
 			}
-			return writeRecordsText(cmd.OutOrStdout(), doc.Header, records)
+			return writeRecordsText(cmd.OutOrStdout(), doc, records)
 		},
 	}
 }
@@ -87,27 +87,13 @@ func writeRecordsJSON(w io.Writer, records []*gedcom.Record) error {
 	return writeJSON(w, out)
 }
 
-// switchWriter lets the destination of an encoder change between writes.
-type switchWriter struct{ w io.Writer }
-
-func (s *switchWriter) Write(p []byte) (int, error) { return s.w.Write(p) }
-
-func writeRecordsText(w io.Writer, header *gedcom.Header, records []*gedcom.Record) error {
-	// The header goes to io.Discard because gedcom-go has no public single-record encode.
-	out := &switchWriter{w: io.Discard}
-	enc := encoder.NewStreamEncoder(out)
-	if err := enc.WriteHeader(header); err != nil {
-		return err
-	}
-	// Flush before switching, or the buffered header lands in the real output.
-	if err := enc.Flush(); err != nil {
-		return err
-	}
-	out.w = w
+// writeRecordsText writes each record's lines as Encode would write them
+// within doc, with no header or trailer.
+func writeRecordsText(w io.Writer, doc *gedcom.Document, records []*gedcom.Record) error {
 	for _, record := range records {
-		if err := enc.WriteRecord(record); err != nil {
+		if err := encoder.EncodeRecord(w, doc, record, nil); err != nil {
 			return err
 		}
 	}
-	return enc.Flush()
+	return nil
 }
