@@ -88,11 +88,17 @@ marriage) is listed once, at the generation of the shortest path.`, name, first,
 }
 
 // relativeRows maps a walk to rows in the walk's order. The result is never
-// nil, so that no relatives is [] in JSON.
+// nil, so that no relatives is [] in JSON. gedcom-go skips xrefs that are not
+// individuals, but only an unexported comment promises it, so a relative that
+// does not resolve is skipped here too rather than dereferenced.
 func relativeRows(doc *gedcom.Document, relatives []gedcom.Relative) []row {
 	rows := make([]row, 0, len(relatives))
 	for _, r := range relatives {
-		rows = append(rows, relativeRow{Generation: r.Generation, indiRow: indiRowOf(doc.GetIndividual(r.XRef))})
+		i := doc.GetIndividual(r.XRef)
+		if i == nil {
+			continue
+		}
+		rows = append(rows, relativeRow{Generation: r.Generation, indiRow: indiRowOf(i)})
 	}
 	return rows
 }

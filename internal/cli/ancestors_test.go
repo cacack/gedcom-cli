@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/cacack/gedcom-go/v3/gedcom"
 )
 
 // lineage is a synthetic tree with pedigree collapse: Ann's parents Bert and
@@ -91,6 +93,19 @@ func TestWalkJSONEmpty(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout) != "[]" {
 		t.Errorf("stdout = %q, want []", stdout)
+	}
+}
+
+// TestRelativeRowsSkipsUnresolved checks that a walk result naming no
+// individual is skipped, not dereferenced.
+func TestRelativeRowsSkipsUnresolved(t *testing.T) {
+	doc, err := decodeFile(lineage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := relativeRows(doc, []gedcom.Relative{{XRef: "@I99@", Generation: 1}, {XRef: "@I2@", Generation: 1}})
+	if len(rows) != 1 || rows[0].(relativeRow).XRef != "@I2@" {
+		t.Errorf("rows = %+v, want only @I2@", rows)
 	}
 }
 
