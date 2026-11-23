@@ -41,7 +41,8 @@ func newRelativesCmd() *cobra.Command {
 		Use:   "relatives <file> <xref>",
 		Short: "Print a person with their parents, siblings, spouses and children",
 		Long: `Print a person and their immediate family, one person per line: first the
-person, then their parents, siblings, spouses and children, each in file order.
+person, then their parents, siblings, spouses and children, in file order
+(a family's husband before its wife).
 
 Text output is tab-separated with no header. The fields are:
 
@@ -50,9 +51,11 @@ Text output is tab-separated with no header. The fields are:
 relationship is self, parent, sibling, half-sibling, spouse or child. family
 is the family the relative comes through: for a parent or sibling, a family
 the person is a child of; for a half-sibling, the parent's other family; for a
-spouse or child, a family the person is a spouse in. The person's own line has
-no family. A person in several families (two marriages, birth and adoptive
-parents) has a line per relative in each, so a relative can appear twice.
+spouse or child, a family that names the person as husband or wife (a FAMS
+link the family does not return is ignored). The person's own line has no
+family. A person in several families (two marriages, birth and adoptive
+parents) has a parent, spouse or child line in each, so a relative can appear
+twice; a sibling is listed once, under the first family that links them.
 
 pedigree is the PEDI of the child's link to that family (birth, adopted,
 foster, ...) as written, or empty when the file gives none: the person's own
@@ -60,7 +63,8 @@ link for a parent, the relative's for a sibling or child. Spouses have none.
 
 --format json prints one object: "person", with the keys of 'gedcom list'
 indi (xref, name, birth, death), and "relatives", an array of objects with
-those keys plus relationship, family and pedigree.
+those keys plus relationship, family and pedigree. The person is not repeated
+in "relatives".
 
 An xref may be given without its @ delimiters.`,
 		Example: `  gedcom relatives family.ged @I1@
@@ -118,13 +122,9 @@ func relatives(doc *gedcom.Document, person *gedcom.Individual) []relativeRow {
 		}
 		add(sib.Individual, relationship, sib.Family, pedigreeIn(sib.Individual, sib.Family))
 	}
-	families := person.FamiliesAsSpouse(doc)
+	families := spouseFamilies(doc, person)
 	for _, fam := range families {
-		spouse := fam.HusbandIndividual(doc)
-		if fam.Husband == person.XRef {
-			spouse = fam.WifeIndividual(doc)
-		}
-		if spouse != nil {
+		if spouse := otherSpouse(doc, fam, person); spouse != nil {
 			add(spouse, relSpouse, fam, "")
 		}
 	}
@@ -134,6 +134,32 @@ func relatives(doc *gedcom.Document, person *gedcom.Individual) []relativeRow {
 		}
 	}
 	return rows
+}
+
+// spouseFamilies is person's FAMS families that name person as husband or
+// wife. A one-sided FAMS link would otherwise report another couple's members
+// as person's spouse and children.
+func spouseFamilies(doc *gedcom.Document, person *gedcom.Individual) []*gedcom.Family {
+	var families []*gedcom.Family
+	for _, fam := range person.FamiliesAsSpouse(doc) {
+		if fam.Husband == person.XRef || fam.Wife == person.XRef {
+			families = append(families, fam)
+		}
+	}
+	return families
+}
+
+// otherSpouse is the spouse in fam who is not person, or nil when the family
+// names no one else.
+func otherSpouse(doc *gedcom.Document, fam *gedcom.Family, person *gedcom.Individual) *gedcom.Individual {
+	spouse := fam.HusbandIndividual(doc)
+	if fam.Husband == person.XRef {
+		spouse = fam.WifeIndividual(doc)
+	}
+	if spouse == nil || spouse.XRef == person.XRef {
+		return nil
+	}
+	return spouse
 }
 
 // pedigreeIn is the pedigree on child's FAMC link to fam, or "" when the link

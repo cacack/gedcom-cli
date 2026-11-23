@@ -9,7 +9,8 @@ import (
 
 // families has a person (@I1@) with birth and adoptive parents, a sibling, a
 // half-sibling through a parent's second marriage, and two marriages with a
-// child in each. @I13@ has no family at all.
+// child in each. @I13@ has no family at all. @I14@ has a FAMS link to @F3@,
+// which does not name her.
 const families = "testdata/families.ged"
 
 // relativesI1 is the text output for @I1@.
@@ -116,6 +117,15 @@ func TestRelativesNone(t *testing.T) {
 	code, stdout, stderr = run(t, "relatives", "--format", "json", families, "@I13@")
 	if code != ExitOK || stderr != "" || !strings.Contains(stdout, `"relatives": []`) {
 		t.Errorf("json: exit = %d, stderr = %q, stdout =\n%s", code, stderr, stdout)
+	}
+}
+
+// TestRelativesOneSidedSpouseLink checks that a FAMS link the family does not
+// return reports neither the family's spouses nor its children.
+func TestRelativesOneSidedSpouseLink(t *testing.T) {
+	code, stdout, stderr := run(t, "relatives", families, "@I14@")
+	if code != ExitOK || stderr != "" || stdout != "self\t\t@I14@\tNell /Example/\t\t\t\n" {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q", code, stderr, stdout)
 	}
 }
 

@@ -78,6 +78,10 @@
 0 @I13@ INDI
 1 NAME Moss /Example/
 1 SEX M
+0 @I14@ INDI
+1 NAME Nell /Example/
+1 SEX F
+1 FAMS @F3@
 0 @F1@ FAM
 1 HUSB @I2@
 1 WIFE @I3@

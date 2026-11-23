@@ -135,9 +135,12 @@ spouse	@F3@	@I9@	Ivan /Sample/
 child	@F3@	@I10@	Jill /Sample/	1945		birth
 ```
 
+`pedigree` is always the child's end of the link: the person's own for a
+parent, the relative's for a sibling or child.
+
 `--format json` prints one object: `person`, with `list indi`'s keys, and
-`relatives`, each with those keys plus `relationship`, `family` and
-`pedigree`.
+`relatives` (which does not repeat the person), each with those keys plus
+`relationship`, `family` and `pedigree`.
 
 `validate` reports what the decoder could not read cleanly (`decode`) and what
 gedcom-go's validator finds in the records (`validate`), grouped by severity
