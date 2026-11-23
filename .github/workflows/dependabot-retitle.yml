@@ -1,0 +1,55 @@
+name: Dependabot PR title
+
+# Rewrites Dependabot's PR title into plain English. Dependabot derives the
+# title from the commit subject, so the `commit-message.prefix` from
+# dependabot.yml lands in both and every Dependabot PR arrives in conventional
+# format.
+#
+# It matters for the bumps merged by hand, which are the majors. A merge commit
+# made in the GitHub UI carries the PR title as its body, release-please reads
+# that body as a second commit, and a `fix(deps)` bump would then appear twice
+# in the changelog. Auto-merged bumps do not depend on this: the called
+# workflow in dependabot-automerge.yml passes its own subject and an empty body.
+#
+# `edited` is on top of the default types because Dependabot rewrites the title
+# when a newer version supersedes an open PR. Re-running on `edited` cannot
+# loop: the rewrite is idempotent, and events raised by GITHUB_TOKEN do not
+# trigger workflows.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+# Dependabot-triggered runs get a read-only GITHUB_TOKEN by default, so the
+# write scope the edit needs must be requested explicitly.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  retitle:
+    name: Retitle
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Rewrite the PR title in plain English
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PLAIN=$(printf '%s' "$TITLE" | sed -E 's/^[a-z]+(\([^)]*\))?!?: *//')
+
+          if [ "$PLAIN" = "$TITLE" ]; then
+            echo "Title is not in conventional format; leaving as-is."
+            exit 0
+          fi
+
+          # Capitalize the first letter so the result reads as a sentence:
+          # 'fix(deps): bump x from 1 to 2' -> 'Bump x from 1 to 2'
+          PLAIN=$(printf '%s' "$PLAIN" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
+
+          gh pr edit "$PR_URL" --title "$PLAIN"
+          echo "Retitled: '$TITLE' -> '$PLAIN'"

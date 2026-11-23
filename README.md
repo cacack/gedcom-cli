@@ -79,6 +79,11 @@ partial work), not from commit messages. release-please writes any issue a
 commit mentions into the release PR as "closes", so the release would close an
 issue that was only referenced.
 
+Write pull request titles as plain prose (`Add a validate command`), not as
+conventional commits. A merge commit carries the PR title as its body, and
+release-please would count a conventional title as a second copy of the
+change. CI checks the title; Dependabot's titles are rewritten automatically.
+
 ## License
 
 [MIT](LICENSE)
