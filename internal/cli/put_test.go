@@ -170,6 +170,7 @@ func TestPutExitCodes(t *testing.T) {
 	}{
 		{"missing -o", []string{"put", recordsFixture, fragment}, ExitUsage},
 		{"-o is the input", []string{"put", recordsFixture, fragment, "-o", recordsFixture}, ExitUsage},
+		{"-o is the records file", []string{"put", recordsFixture, fragment, "-o", fragment}, ExitUsage},
 		{"missing records file", []string{"put", recordsFixture, "-o", out}, ExitUsage},
 		{"records file not found", []string{"put", recordsFixture, "testdata/does-not-exist.ged", "-o", out}, ExitError},
 		{"input not found", []string{"put", "testdata/does-not-exist.ged", fragment, "-o", out}, ExitError},

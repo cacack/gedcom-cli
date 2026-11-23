@@ -44,9 +44,15 @@ record's indentation or blank lines.
 
 What the decoder could not read cleanly in records.ged is reported as
 'gedcom validate' reports it, with line numbers counted in records.ged. When
-any finding is an error, nothing is written and the exit code is 1.
+any finding is an error, nothing is written and the exit code is 1, with the
+report printed. Pointers are not checked: a put record may point at an xref
+the file does not define, or replace a record with one of another type. Run
+'gedcom validate' on the output to find them.
 
--o is required and may not name the input file. An existing output file is
+A failure before the report exists (an unreadable file, a record in
+records.ged without an xref) prints no report, only the error on stderr.
+
+-o is required and may not name file or records.ged. An existing output file is
 replaced only once the whole result is written. With -o - the GEDCOM goes to
 stdout and the report to stderr.`,
 		Example: `  # The edit loop: print a record, change its lines, put it back.
@@ -63,7 +69,7 @@ stdout and the report to stderr.`,
 			if err != nil {
 				return err
 			}
-			out, err := outputPath(cmd, args[0])
+			out, err := outputPath(cmd, args[0], args[1])
 			if err != nil {
 				return err
 			}
@@ -113,7 +119,7 @@ func putRecords(cmd *cobra.Command, in, records, out string) (*putReport, error)
 		Findings:  findings,
 	}
 	if n := report.Counts.Error; n > 0 {
-		return report, fmt.Errorf("%s in %s; %s not written", plural(n, "error"), inputName(records), outputName(out))
+		return report, fmt.Errorf("%s in %s; %s not written", plural(n, "error", "errors"), inputName(records), outputName(out))
 	}
 
 	// The decoder reports an xref the fragment defines twice as an error, so
@@ -197,12 +203,4 @@ func writePutText(w io.Writer, r *putReport) error {
 		return err
 	}
 	return writeFindingGroups(w, r.Counts, r.Findings)
-}
-
-// plural is n and noun, with an "s" unless n is 1.
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
 }

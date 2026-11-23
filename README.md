@@ -172,7 +172,55 @@ report a duplicated xref, so `DUPLICATE_XREF` appears once per source.
 Duplicate detection (`POTENTIAL_DUPLICATE`) is slow on large files and runs
 only with `--min-severity info`.
 
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put` and `delete`. Flags and JSON output may change until v1.0.
+`put` and `delete` correct a file. They never write to the input: `-o` names
+the new file (required, and not an input), or `-o -` writes it to stdout.
+Every line they were not asked to change is written exactly as it was read.
+A refused write prints the report (with `--format json`, as JSON) and exits
+`1`; a failure before there is a report (an unreadable file, an unknown xref)
+prints only the error on stderr.
+
+`put` takes a file of level-0 records, with no header, as `get` prints them
+(`-` reads it from stdin). Each record replaces the one with the same xref, in
+its place, or is appended when the xref is new. `get`, edit, `put` is the edit
+loop:
+
+```sh
+gedcom get family.ged @I1@ > i1.ged
+$EDITOR i1.ged
+gedcom put family.ged i1.ged -o family-edited.ged
+```
+
+```text
+wrote family-edited.ged: 1 replaced, 0 added, 0 unchanged
+  replaced	@I1@
+```
+
+A record put back unedited is left as it was, so the output is byte-identical.
+A replaced record is written as its new lines, without the old record's
+indentation or the blank lines before it. What the decoder could not read
+cleanly in the records file is reported as `validate` reports it; when any of
+it is an error, nothing is written and the exit code is `1`. Pointers are not
+checked: a put record may point at an xref the file lacks, or replace a record
+with one of another type, so run `validate` on the output.
+
+`delete` removes records by xref. While other records still point at them, it
+writes nothing, lists each pointer (the record holding it, the tag path to it,
+the record it points at; `-` is the header, `"from": ""` in JSON) and exits
+`1`. `--force` deletes anyway and reports the pointers as dangling:
+
+```sh
+gedcom delete family.ged @I2@ -o family-edited.ged
+```
+
+```text
+family-edited.ged not written: pointers left to @I2@
+references (1)
+  @F1@	FAM.HUSB	@I2@
+```
+
+An xref the file defines more than once is refused, since `delete` could not
+tell those records apart.
+
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 ## Conventions

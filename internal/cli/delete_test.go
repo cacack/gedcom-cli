@@ -197,13 +197,27 @@ func TestDeleteExitCodes(t *testing.T) {
 	}
 }
 
-func readFile(t *testing.T, path string) string {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
+// A file defining an xref twice is refused: removing one copy leaves the
+// other under the same xref, so the report would be wrong.
+func TestDeleteRefusesDuplicateXRef(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "dup.ged")
+	text := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+		"0 @I1@ INDI\n1 NAME Ada /Example/\n0 @I1@ INDI\n1 NAME Ben /Example/\n0 TRLR\n"
+	if err := os.WriteFile(in, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	out := filepath.Join(dir, "out.ged")
+	code, stdout, stderr := run(t, "delete", "--format", "json", in, "I1", "-o", out)
+	if code != ExitError {
+		t.Fatalf("exit = %d, want %d (stderr %q)", code, ExitError, stderr)
+	}
+	if stdout != "" || !strings.Contains(stderr, "more than once") {
+		t.Errorf("stdout = %q, stderr = %q; want only the error", stdout, stderr)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("a refused delete wrote %s (stat err %v)", out, err)
+	}
 }
 
 func assertFileIs(t *testing.T, path, want string) {

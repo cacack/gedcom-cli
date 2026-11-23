@@ -37,10 +37,15 @@ read.
 
 Pointers to a deleted record left in the rest of the file (a family's CHIL, a
 citation's SOUR, the header's SUBM) are listed, each as the record holding it,
-the tag path to it and the record it points at; "-" stands for the header.
-Pointers held by records deleted in the same command do not count. While any
-are left, nothing is written and the exit code is 1. --force deletes anyway
-and writes the pointers as they are, dangling: remove them with put.
+the tag path to it and the record it points at; "-" stands for the header
+(in --format json, a "from" of ""). Pointers held by records deleted in the
+same command do not count. While any are left, nothing is written and the exit
+code is 1, with the report printed. --force deletes anyway and writes the
+pointers as they are, dangling: remove them with put.
+
+A failure before the report exists (an unreadable file, an xref the file does
+not define, or defines more than once) prints no report, only the error on
+stderr.
 
 -o is required and may not name the input file. An existing output file is
 replaced only once the whole result is written. With -o - the GEDCOM goes to
@@ -85,7 +90,8 @@ stdout and the report to stderr.`,
 
 // deleteRecords removes the records named by xrefs from the file at in and
 // writes the result to out. It returns the report whenever every xref was
-// found, with an error when pointers left to the records stopped the write.
+// found once, with an error when pointers left to the records stopped the
+// write.
 func deleteRecords(cmd *cobra.Command, in string, xrefs []string, out string, force bool) (*deleteReport, error) {
 	res, err := decodeForWrite(in)
 	if err != nil {
@@ -113,6 +119,11 @@ func deleteRecords(cmd *cobra.Command, in string, xrefs []string, out string, fo
 		if err != nil {
 			return nil, err
 		}
+		// The library indexes another record with the same xref in its
+		// place, which this command could neither report nor tell apart.
+		if doc.GetRecord(xref) != nil {
+			return nil, fmt.Errorf("%s defines %s more than once; %s not written", inputName(in), xref, outputName(out))
+		}
 		for _, ref := range refs {
 			if ref.XRef != "" && deleted[ref.XRef] {
 				continue
@@ -123,7 +134,7 @@ func deleteRecords(cmd *cobra.Command, in string, xrefs []string, out string, fo
 
 	if n := len(report.References); n > 0 && !force {
 		return report, fmt.Errorf("%s left to the deleted records; %s not written (--force deletes anyway)",
-			plural(n, "pointer"), outputName(out))
+			plural(n, "pointer", "pointers"), outputName(out))
 	}
 	if err := writeOutput(cmd, out, doc); err != nil {
 		return nil, err
