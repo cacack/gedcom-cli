@@ -148,6 +148,7 @@ func rowsOf[T any](entities []T, limit int, toRow func(T) row) []row {
 
 func newIndiRow(i *gedcom.Individual) row { return indiRowOf(i) }
 
+// indiRowOf is an individual as list indi prints it.
 func indiRowOf(i *gedcom.Individual) indiRow {
 	return indiRow{
 		XRef:  i.XRef,
