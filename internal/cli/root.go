@@ -70,7 +70,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().String("format", formatText, `output format: "text" or "json"`)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
-	root.AddCommand(newInfoCmd(), newGetCmd())
+	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd())
 	return root
 }
 

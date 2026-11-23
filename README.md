@@ -60,6 +60,28 @@ gedcom get --format json family.ged @I1@
 `get --format json` prints an array of records in gedcom-go's entity shape,
 which may change with the library.
 
+`list` prints one line per record of a type (`indi`, `fam`, `sour`, `repo` or
+`obje`), tab-separated and in file order; `--limit N` stops after N records:
+
+```sh
+gedcom list family.ged indi
+gedcom list --limit 20 family.ged fam
+```
+
+```text
+@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978
+@I2@	Ben /Example/	21 JUL 1899
+```
+
+With `--format json` each record is a flat object, so `jq` does the searching.
+To find people by surname:
+
+```sh
+gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
+```
+
+`gedcom list --help` names the fields of each type.
+
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 ## Conventions
