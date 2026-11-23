@@ -25,7 +25,8 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // writeCommands holds every command that writes a GEDCOM file, as the
 // arguments that run it on in, writing out, with no change requested. Each
 // one must come back byte-identical (CONSTITUTION.md C2); add a new write
-// command here.
+// command here. It is empty until the first write command lands, so until then
+// the test holds only the write path itself.
 var writeCommands = map[string]func(in, out string) []string{}
 
 // TestRoundTripByteIdentical settles CONSTITUTION.md C2: decoding and

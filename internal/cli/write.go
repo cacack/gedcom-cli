@@ -21,7 +21,9 @@ func decodeForWrite(path string) (*decoder.DecodeResult, error) {
 	return decodeFileWithOptions(path, opts)
 }
 
-// encodeDocument writes doc keeping the layout decodeForWrite recorded.
+// encodeDocument writes doc keeping the layout decodeForWrite recorded. doc
+// must come from decodeForWrite: a document from decodeFile carries no layout,
+// so it is written normalized rather than byte-identical.
 func encodeDocument(w io.Writer, doc *gedcom.Document) error {
 	opts := encoder.DefaultOptions()
 	opts.PreserveLayout = true
