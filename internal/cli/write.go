@@ -83,6 +83,14 @@ func reportWriter(cmd *cobra.Command, out string) io.Writer {
 	return cmd.OutOrStdout()
 }
 
+// inputName is the input path as a message names it.
+func inputName(path string) string {
+	if path == stdio {
+		return "stdin"
+	}
+	return path
+}
+
 // outputName is out as a report names it.
 func outputName(out string) string {
 	if out == stdio {

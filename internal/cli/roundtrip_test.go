@@ -25,17 +25,44 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // writeCommands holds every command that writes a GEDCOM file, as the
 // arguments that run it on in, writing out, with no change requested. Each
 // one must come back byte-identical (CONSTITUTION.md C2); add a new write
-// command here.
-var writeCommands = map[string]func(in, out string) []string{
+// command here. delete always changes the file, so it is held instead to
+// removing exactly the deleted record's lines (TestDeleteRemovesOnlyTheRecord).
+var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 	// An empty batch requests no change.
-	"media add": func(in, out string) []string {
+	"media add": func(t *testing.T, in, out string) []string {
 		batch := filepath.Join(filepath.Dir(out), "empty.tsv")
 		if err := os.WriteFile(batch, nil, 0o644); err != nil {
-			panic(err)
+			t.Fatal(err)
 		}
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
 	"extract": extractEveryone,
+	// put with an unedited copy of every record, as get prints them.
+	"put": func(t *testing.T, in, out string) []string {
+		fragment := filepath.Join(t.TempDir(), "records.ged")
+		if err := os.WriteFile(fragment, []byte(getAll(t, in)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"put", in, fragment, "-o", out}
+	},
+}
+
+// getAll is the get output for every record of the file at path.
+func getAll(t *testing.T, path string) string {
+	t.Helper()
+	doc, err := decodeFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"get", path}
+	for _, record := range doc.Records {
+		args = append(args, record.XRef)
+	}
+	code, stdout, stderr := run(t, args...)
+	if code != ExitOK {
+		t.Fatalf("get: exit = %d, stderr = %q", code, stderr)
+	}
+	return stdout
 }
 
 // TestRoundTripByteIdentical settles CONSTITUTION.md C2: decoding and
@@ -79,7 +106,7 @@ func TestRoundTripByteIdentical(t *testing.T) {
 			for cmd, args := range writeCommands {
 				t.Run(cmd, func(t *testing.T) {
 					out := filepath.Join(t.TempDir(), name)
-					code, _, stderr := run(t, args(path, out)...)
+					code, _, stderr := run(t, args(t, path, out)...)
 					if code != ExitOK {
 						t.Fatalf("exit = %d, stderr = %q", code, stderr)
 					}

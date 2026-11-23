@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	gedcomgo "github.com/cacack/gedcom-go/v3"
+	"github.com/cacack/gedcom-go/v3/decoder"
 	"github.com/cacack/gedcom-go/v3/validator"
 	"github.com/spf13/cobra"
 )
@@ -135,17 +136,7 @@ func findings(path string, withDuplicates bool, living livingOptions) ([]finding
 		SkipDuplicateDetection: !withDuplicates,
 	})
 
-	all := make([]finding, 0, len(res.Diagnostics)+len(issues))
-	for _, d := range res.Diagnostics {
-		all = append(all, finding{
-			Source:   sourceDecode,
-			Severity: severityName(d.Severity),
-			Code:     d.Code,
-			Message:  d.Message,
-			Line:     d.Line,
-			Context:  d.Context,
-		})
-	}
+	all := decodeFindings(res.Diagnostics)
 	for _, i := range issues {
 		all = append(all, finding{
 			Source:      sourceValidate,
@@ -161,6 +152,22 @@ func findings(path string, withDuplicates bool, living livingOptions) ([]finding
 		redactFindings(all, res.Document, hiddenRecords(res.Document, presumedLiving(res.Document, living.cfg)))
 	}
 	return all, nil
+}
+
+// decodeFindings is the decoder's diagnostics as findings, in its order.
+func decodeFindings(diags decoder.Diagnostics) []finding {
+	out := make([]finding, 0, len(diags))
+	for _, d := range diags {
+		out = append(out, finding{
+			Source:   sourceDecode,
+			Severity: severityName(d.Severity),
+			Code:     d.Code,
+			Message:  d.Message,
+			Line:     d.Line,
+			Context:  d.Context,
+		})
+	}
+	return out
 }
 
 // severityName is a library severity as one of severities. A level this
@@ -205,7 +212,13 @@ func writeReportText(w io.Writer, report validateReport) error {
 		_, err := fmt.Fprintf(w, "%s: no findings\n", report.File)
 		return err
 	}
-	counts := map[string]int{"error": report.Counts.Error, "warning": report.Counts.Warning, "info": report.Counts.Info}
+	return writeFindingGroups(w, report.Counts, report.Findings)
+}
+
+// writeFindingGroups writes findings grouped by severity, most severe first:
+// a heading with each group's count, then one indented line per finding.
+func writeFindingGroups(w io.Writer, c severityCounts, findings []finding) error {
+	counts := map[string]int{"error": c.Error, "warning": c.Warning, "info": c.Info}
 	for _, severity := range severities {
 		if counts[severity] == 0 {
 			continue
@@ -213,7 +226,7 @@ func writeReportText(w io.Writer, report validateReport) error {
 		if _, err := fmt.Fprintf(w, "%s (%d)\n", severity, counts[severity]); err != nil {
 			return err
 		}
-		for _, f := range report.Findings {
+		for _, f := range findings {
 			if f.Severity != severity {
 				continue
 			}

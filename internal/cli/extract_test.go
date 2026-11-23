@@ -311,7 +311,7 @@ func fileText(t *testing.T, path string) string {
 
 // extractEveryone is extract's run with no change requested: every individual
 // in the file, cut into a file of its own.
-func extractEveryone(in, out string) []string {
+func extractEveryone(_ *testing.T, in, out string) []string {
 	args := []string{"extract", in}
 	res, err := decodeForWrite(in)
 	if err != nil {
