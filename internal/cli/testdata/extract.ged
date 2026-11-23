@@ -1,0 +1,58 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+1 ADDR 1 Example Street
+1 PHON 555-0100
+1 EMAIL submitter@example.com
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 SEX F
+1 SOUR @S1@
+2 PAGE entry 4
+1 NOTE @N1@
+1 OBJE @O1@
+1 FAMC @F1@
+1 FAMS @F2@
+0 @I2@ INDI
+1 NAME Ben /Example/
+1 SEX M
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Cleo /Sample/
+1 SEX F
+1 SOUR @S2@
+1 FAMS @F1@
+0 @I4@ INDI
+1 NAME Dan /Other/
+1 SEX M
+1 FAMS @F2@
+0 @I5@ INDI
+1 NAME Eve /Example/
+1 SEX F
+1 FAMC @F2@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I3@
+1 CHIL @I1@
+0 @F2@ FAM
+1 HUSB @I4@
+1 WIFE @I1@
+1 CHIL @I5@
+0 @S1@ SOUR
+1 TITL Example Parish Register
+1 REPO @R1@
+0 @S2@ SOUR
+1 TITL Unrelated Census
+0 @R1@ REPO
+1 NAME Example Archive
+0 @N1@ NOTE Research note about Ada
+0 @O1@ OBJE
+1 FILE photos/ada.jpg
+2 FORM jpg
+0 TRLR
