@@ -13,3 +13,10 @@ Thumbs.db
 .direnv/
 
 # Add language-specific entries per repo (see https://www.toptal.com/developers/gitignore)
+
+# Go
+/bin/
+*.test
+*.out
+go.work
+go.work.sum
