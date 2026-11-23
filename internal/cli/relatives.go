@@ -18,8 +18,9 @@ const (
 	relChild       = "child"
 )
 
-// relativeRow is one relative: a list indi row plus how they are related.
-type relativeRow struct {
+// kinRow is one relative in relatives: a list indi row plus how they are
+// related.
+type kinRow struct {
 	indiRow
 	Relationship string `json:"relationship"`
 	Family       string `json:"family"`
@@ -28,11 +29,11 @@ type relativeRow struct {
 
 // relativesReport is the JSON form of relatives.
 type relativesReport struct {
-	Person    indiRow       `json:"person"`
-	Relatives []relativeRow `json:"relatives"`
+	Person    indiRow  `json:"person"`
+	Relatives []kinRow `json:"relatives"`
 }
 
-func (r relativeRow) fields() []string {
+func (r kinRow) fields() []string {
 	return []string{r.Relationship, r.Family, r.XRef, r.Name, r.Birth, r.Death, r.Pedigree}
 }
 
@@ -102,10 +103,10 @@ An xref may be given without its @ delimiters.`,
 
 // relatives lists person's parents, siblings, spouses and children, in that
 // order. The result is never nil, so that no relatives is [] in JSON.
-func relatives(doc *gedcom.Document, person *gedcom.Individual) []relativeRow {
-	rows := []relativeRow{}
+func relatives(doc *gedcom.Document, person *gedcom.Individual) []kinRow {
+	rows := []kinRow{}
 	add := func(i *gedcom.Individual, relationship string, fam *gedcom.Family, pedigree string) {
-		rows = append(rows, relativeRow{
+		rows = append(rows, kinRow{
 			indiRow:      newIndiRow(i).(indiRow),
 			Relationship: relationship,
 			Family:       fam.XRef,
@@ -175,7 +176,7 @@ func pedigreeIn(child *gedcom.Individual, fam *gedcom.Family) string {
 
 func writeRelativesText(w io.Writer, report relativesReport) error {
 	rows := make([]row, 0, len(report.Relatives)+1)
-	rows = append(rows, relativeRow{indiRow: report.Person, Relationship: relSelf})
+	rows = append(rows, kinRow{indiRow: report.Person, Relationship: relSelf})
 	for _, r := range report.Relatives {
 		rows = append(rows, r)
 	}
