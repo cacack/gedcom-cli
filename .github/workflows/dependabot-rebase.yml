@@ -1,0 +1,35 @@
+name: Dependabot Rebase
+
+# Stub. The logic lives in cacack/workflows; see that repo's README.
+#
+# main's ruleset requires branches to be up to date, and GitHub's auto-merge
+# never rebases a BEHIND branch, so after one Dependabot bump merges the rest
+# stall. This rebases the oldest stalled one, one at a time, as the shared
+# Dependabot App. Each trigger restarts it at a different point:
+#   push               -- the in-flight PR merged
+#   auto_merge_enabled -- a new bump was armed
+#   workflow_run       -- the in-flight PR's CI failed
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    types: [auto_merge_enabled]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  rebase:
+    # workflow_run fires for every CI run; only a failed Dependabot run can
+    # free the train.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'failure' &&
+       startsWith(github.event.workflow_run.head_branch, 'dependabot/'))
+    uses: cacack/workflows/.github/workflows/dependabot-rebase.yml@48676c738ce02a31811733fcb69236c5220dc665 # v2.5.0
+    secrets:
+      BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+      BOT_PRIVATE_KEY: ${{ secrets.BOT_PRIVATE_KEY }}
