@@ -2,8 +2,9 @@
 
 `gedcom` is a command-line tool for inspecting, validating and correcting
 GEDCOM genealogy files. It is a thin wrapper over
-[gedcom-go](https://github.com/cacack/gedcom-go) and is designed to be driven
-by AI coding agents as well as by hand.
+[gedcom-go](https://github.com/cacack/gedcom-go), built equally for use at a
+terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
+what it is and is not trying to be.
 
 **Status: early.** Only `info` exists so far. Flags and JSON output may change
 until v1.0.

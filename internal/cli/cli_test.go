@@ -69,3 +69,15 @@ func TestExitCodes(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandsDocumented is the check for CONSTITUTION.md criterion C3.
+func TestCommandsDocumented(t *testing.T) {
+	for _, cmd := range newRootCmd().Commands() {
+		if cmd.Short == "" {
+			t.Errorf("command %q has no summary", cmd.Name())
+		}
+		if cmd.Example == "" {
+			t.Errorf("command %q has no example in its help", cmd.Name())
+		}
+	}
+}

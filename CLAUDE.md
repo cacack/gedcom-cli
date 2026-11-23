@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-`gedcom` CLI: a thin wrapper over the `github.com/cacack/gedcom-go/v3` library, built to be driven by coding agents.
+`gedcom` CLI: a thin wrapper over the `github.com/cacack/gedcom-go/v3` library, for people and coding agents alike. Direction, principles and non-goals are in [CONSTITUTION.md](CONSTITUTION.md); read it before proposing a command.
 
 - **No GEDCOM logic here.** Commands wrap library calls. A missing capability or a library bug is an issue on `cacack/gedcom-go`, not a workaround in this repo.
 - **The library is consumed as a released version** in `go.mod`. To develop against a local checkout, use a `go.work` (gitignored); never commit a `replace`.
