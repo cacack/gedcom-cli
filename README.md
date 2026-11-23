@@ -168,8 +168,9 @@ skipped or shortened comparisons (very large surname groups, very long given
 names) a warning on stderr says so, and some pairs may be missing.
 
 `media check` reports whether each `FILE` reference resolves to a file under a
-media folder: `ok`, `missing`, `url` or `absolute` (a rooted path, which is not
-resolved). It exits `1` when any reference is missing. `--unreferenced` also
+media folder: `ok`, `missing`, `url`, `absolute` (a rooted path) or `outside`
+(a relative path that climbs out of the folder); the last two are not
+resolved. It exits `1` when any reference is missing. `--unreferenced` also
 lists the files in the folder that nothing references. The media files are
 only looked at, never changed:
 

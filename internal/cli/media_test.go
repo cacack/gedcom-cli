@@ -337,3 +337,60 @@ func TestMediaAddUsage(t *testing.T) {
 		t.Error("input file changed")
 	}
 }
+
+func TestMediaCheckSymlinkRoot(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/ada.jpg", "photos/gone.jpg", "photos/ben.jpg", "photos/extra.jpg")
+	link := filepath.Join(t.TempDir(), "media")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("cannot make a symlink: %v", err)
+	}
+	code, stdout, stderr := run(t, "media", "check", "--root", link, "--unreferenced", file)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.HasSuffix(stdout, "ok\t@O2@\tline 31\tphotos/gone.jpg\nunreferenced\t\t\tphotos/extra.jpg\n") {
+		t.Errorf("stdout =\n%s", stdout)
+	}
+}
+
+func TestMediaCheckOutside(t *testing.T) {
+	ged := strings.Replace(mediaGED, "1 FILE photos/gone.jpg", "1 FILE photos/../../outside.jpg", 1)
+	file, root := mediaFixture(t, ged, "photos/ada.jpg", "photos/ben.jpg")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(root), "outside.jpg"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := run(t, "media", "check", "--root", root, "--unreferenced", file)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.HasSuffix(stdout, "ok\t@O1@\tline 28\tphotos/ada.jpg\noutside\t@O2@\tline 31\tphotos/../../outside.jpg\n") {
+		t.Errorf("stdout =\n%s", stdout)
+	}
+}
+
+func TestMediaCheckOtherSpelling(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/ADA.jpg", "photos/gone.jpg", "photos/ben.jpg")
+	if _, err := os.Stat(filepath.Join(root, "photos", "ada.jpg")); err != nil {
+		t.Skip("the filesystem is case-sensitive")
+	}
+	code, stdout, stderr := run(t, "media", "check", "--root", root, "--unreferenced", file)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if strings.Contains(stdout, "unreferenced") {
+		t.Errorf("a referenced file is listed as unreferenced:\n%s", stdout)
+	}
+}
+
+func TestMediaAddSkipsDanglingXRef(t *testing.T) {
+	ged := strings.Replace(mediaGED, "1 SEX M\n", "1 SEX M\n1 OBJE @O3@\n", 1)
+	file, _ := mediaFixture(t, ged)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--to", "F1", "--path", "photos/cara.jpg", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "@F1@\t@O4@\tcreated\tphotos/cara.jpg\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}

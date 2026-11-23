@@ -26,6 +26,7 @@ const (
 	statusMissing      = "missing"
 	statusURL          = "url"
 	statusAbsolute     = "absolute"
+	statusOutside      = "outside"
 	statusUnreferenced = "unreferenced"
 )
 
@@ -87,6 +88,7 @@ status:
   missing   a relative path naming no file under --root
   url       a URL (it starts with a scheme such as https: or file:)
   absolute  a rooted path (/x, \x or C:\x), which is not resolved
+  outside   a relative path that climbs out of --root (../x), not resolved
 
 Relative paths are resolved against --root, with \ read as a separator as
 older Windows programs wrote it. FILE translations (7.0 FILE.TRAN) are not
@@ -94,7 +96,8 @@ checked.
 
 --unreferenced also lists the files under --root that no FILE names, as paths
 relative to --root. Hidden files and folders (a name starting with ".") are
-skipped.
+skipped. A file a reference resolves to counts as referenced even when the
+names differ in case or Unicode form, as they may on macOS and network shares.
 
 Text output is tab-separated with no header: status, xref, line, file. An
 unreferenced file is a line with status "unreferenced" and no xref or line.
@@ -162,7 +165,7 @@ Exit 1 when any reference is missing.`,
 // checkMedia resolves every FILE line in doc's records against root.
 func checkMedia(doc *gedcom.Document, file, root string, withUnreferenced bool) (*mediaCheckReport, error) {
 	report := &mediaCheckReport{File: file, Root: root, References: []mediaRef{}}
-	referenced := map[string]bool{}
+	referenced := &referencedFiles{names: map[string]bool{}, bySize: map[int64][]os.FileInfo{}}
 	for _, record := range doc.Records {
 		for _, tag := range record.Tags {
 			if tag == nil || tag.Tag != "FILE" {
@@ -174,12 +177,15 @@ func checkMedia(doc *gedcom.Document, file, root string, withUnreferenced bool) 
 				ref.Status = statusURL
 			case absoluteRef.MatchString(tag.Value):
 				ref.Status = statusAbsolute
+			case escapesRoot(normalizeMediaPath(tag.Value)):
+				ref.Status = statusOutside
 			default:
 				rel := normalizeMediaPath(tag.Value)
-				referenced[rel] = true
+				referenced.names[rel] = true
 				ref.Status = statusMissing
-				if mediaFileExists(root, rel) {
+				if info := statMediaFile(root, rel); info != nil {
 					ref.Status = statusOK
+					referenced.bySize[info.Size()] = append(referenced.bySize[info.Size()], info)
 				}
 			}
 			report.References = append(report.References, ref)
@@ -201,18 +207,66 @@ func normalizeMediaPath(value string) string {
 	return path.Clean(strings.ReplaceAll(value, `\`, "/"))
 }
 
-// mediaFileExists reports whether rel, a normalized path, names a regular file
-// under root.
-func mediaFileExists(root, rel string) bool {
-	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
-	return err == nil && info.Mode().IsRegular()
+// escapesRoot reports whether rel, a normalized path, climbs out of the
+// folder it is relative to.
+func escapesRoot(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, "../")
 }
 
-// unreferencedFiles lists, in lexical order, the files under root whose
-// relative path is not in referenced, skipping hidden files and folders.
-func unreferencedFiles(root string, referenced map[string]bool) ([]string, error) {
+// statMediaFile returns the file info of rel, a normalized path, when it names
+// a regular file under root, and nil otherwise.
+func statMediaFile(root, rel string) os.FileInfo {
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	return info
+}
+
+// referencedFiles is what the FILE references under a root name: their
+// normalized paths, and the files the resolved ones stat to, by size.
+type referencedFiles struct {
+	names  map[string]bool
+	bySize map[int64][]os.FileInfo
+}
+
+// has reports whether the file d at p, rel under the root, is referenced: by
+// its path, or as the same file a reference resolved to under another
+// spelling (case or Unicode form, on a filesystem that ignores them).
+func (r *referencedFiles) has(p, rel string, d fs.DirEntry) (bool, error) {
+	if r.names[rel] {
+		return true, nil
+	}
+	entry, err := d.Info()
+	if err != nil {
+		return false, err
+	}
+	candidates := r.bySize[entry.Size()]
+	if len(candidates) == 0 {
+		return false, nil
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return false, err
+	}
+	for _, ref := range candidates {
+		if os.SameFile(info, ref) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// unreferencedFiles lists, in lexical order, the files under root that are not
+// referenced, skipping hidden files and folders. A root that is a symlink is
+// followed.
+func unreferencedFiles(root string, referenced *referencedFiles) ([]string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
 	files := []string{}
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -229,7 +283,12 @@ func unreferencedFiles(root string, referenced map[string]bool) ([]string, error
 		if err != nil {
 			return err
 		}
-		if rel = filepath.ToSlash(rel); !referenced[rel] {
+		rel = filepath.ToSlash(rel)
+		ok, err := referenced.has(p, rel, d)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			files = append(files, rel)
 		}
 		return nil
@@ -286,8 +345,8 @@ result to --output. The input file is never changed.
 The file is linked through an OBJE record: the first one with a FILE of that
 path is reused, otherwise a new one is created (FILE, with FORM and TITL
 under it, as the encoder writes them for the file's version) with the first
-free xref of the form @O1@. The record then gets an OBJE line pointing at it,
-unless it already has one. Running the same command again changes nothing.
+free xref of the form @O1@ that no record already points at. The record then
+gets an OBJE line pointing at it, unless it already has one. Running the same command again changes nothing.
 
 --form sets the FORM. Without it, the FORM is the file's extension for a 5.x
 file (jpg, pdf) and its media type for a 7.0 file (image/jpeg).
@@ -479,6 +538,7 @@ func addMedia(doc *gedcom.Document, rows []mediaRow, form, root string) ([]media
 		return nil, errors.New(strings.Join(errs, "\n"))
 	}
 
+	pointed := pointedXRefs(doc)
 	added := make([]mediaAdded, 0, len(rows))
 	for i, row := range rows {
 		t := targets[i]
@@ -487,7 +547,7 @@ func addMedia(doc *gedcom.Document, rows []mediaRow, form, root string) ([]media
 		object := findMediaObject(doc, filePath)
 		if object == nil {
 			object = &gedcom.MediaObject{
-				XRef:  freeXRef(doc, "O"),
+				XRef:  freeXRef(doc, pointed, "O"),
 				Files: []*gedcom.MediaFile{{FileRef: filePath, Form: t.form, Title: row.title}},
 			}
 			if err := doc.AddRecord(&gedcom.Record{XRef: object.XRef, Type: gedcom.RecordTypeMedia, Entity: object}); err != nil {
@@ -534,10 +594,10 @@ func checkMediaPath(p, root string) string {
 		return fmt.Sprintf("path %s is outside --root %s: want a path relative to it", p, root)
 	}
 	rel := normalizeMediaPath(p)
-	if rel == ".." || strings.HasPrefix(rel, "../") {
+	if escapesRoot(rel) {
 		return fmt.Sprintf("path %s is outside --root %s", p, root)
 	}
-	if !mediaFileExists(root, rel) {
+	if statMediaFile(root, rel) == nil {
 		return fmt.Sprintf("no file %s under --root %s", p, root)
 	}
 	return ""
@@ -579,12 +639,26 @@ func hasMediaLink(links []*gedcom.MediaLink, xref string) bool {
 	return false
 }
 
+// pointedXRefs is the set of xrefs that doc's records point at, defined or not.
+func pointedXRefs(doc *gedcom.Document) map[string]bool {
+	var version gedcom.Version
+	if doc.Header != nil {
+		version = doc.Header.DeclaredVersion
+	}
+	pointed := map[string]bool{}
+	for _, record := range doc.Records {
+		gedcom.VisitForVersion(record, version, func(xref string) { pointed[xref] = true })
+	}
+	return pointed
+}
+
 // freeXRef returns the first xref @<prefix>N@, from N = 1, that doc does not
-// define.
-func freeXRef(doc *gedcom.Document, prefix string) string {
+// define and that is not in pointed, so a new record never picks up a
+// dangling pointer meant for a record that no longer exists.
+func freeXRef(doc *gedcom.Document, pointed map[string]bool, prefix string) string {
 	for n := 1; ; n++ {
 		xref := "@" + prefix + strconv.Itoa(n) + "@"
-		if doc.GetRecord(xref) == nil {
+		if doc.GetRecord(xref) == nil && !pointed[xref] {
 			return xref
 		}
 	}
