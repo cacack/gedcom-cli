@@ -11,4 +11,5 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "build(deps)"
+      # `fix` so a dependency bump, gedcom-go above all, cuts a patch release.
+      prefix: "fix(deps)"

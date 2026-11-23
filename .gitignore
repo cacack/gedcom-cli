@@ -16,6 +16,7 @@ Thumbs.db
 
 # Go
 /bin/
+/dist/
 *.test
 *.out
 go.work

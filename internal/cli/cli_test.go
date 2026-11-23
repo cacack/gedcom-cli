@@ -42,6 +42,19 @@ func TestInfoJSON(t *testing.T) {
 	}
 }
 
+func TestVersionStampedByRelease(t *testing.T) {
+	buildVersion = "v9.9.9"
+	t.Cleanup(func() { buildVersion = "" })
+
+	code, stdout, stderr := run(t, "--version")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "v9.9.9") {
+		t.Errorf("stdout = %q, want the stamped version", stdout)
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	tests := []struct {
 		name string
