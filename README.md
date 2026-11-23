@@ -11,11 +11,24 @@ until v1.0.
 
 ## Install
 
+**Prebuilt binary.** Download the archive for your platform (linux, darwin or
+windows; amd64 or arm64) from the
+[latest release](https://github.com/cacack/gedcom-cli/releases/latest), check
+it against `checksums.txt`, and put `gedcom` on your `PATH`:
+
+```sh
+sha256sum --check --ignore-missing checksums.txt
+tar -xzf gedcom_*_linux_amd64.tar.gz gedcom
+sudo mv gedcom /usr/local/bin/
+```
+
+**With Go** (1.25+):
+
 ```sh
 go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 ```
 
-Requires Go 1.25+.
+`gedcom --version` reports the release either way.
 
 ## Usage
 
@@ -53,6 +66,13 @@ These hold for every command, so scripts and agents can rely on them:
 make check   # vet, test, gofmt: what CI runs
 make build   # ./bin/gedcom
 ```
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
+Releases are cut by release-please from the commits on `main`: `feat` and `fix`
+(including Dependabot's `fix(deps)`) and `perf` open or update a release PR,
+and merging it tags the release and publishes the binaries. Other types, such
+as `docs`, `ci` and `chore`, do not release on their own. Until v1.0 a breaking
+change bumps the minor version.
 
 ## License
 

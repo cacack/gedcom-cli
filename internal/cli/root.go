@@ -98,8 +98,15 @@ func writeJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// version reports the module version stamped by `go install`, or "dev".
+// buildVersion is set by GoReleaser through -ldflags for release binaries.
+var buildVersion string
+
+// version reports the release version: stamped by GoReleaser for a downloaded
+// binary, read from the module version for `go install`, or "dev".
 func version() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		return info.Main.Version
 	}
