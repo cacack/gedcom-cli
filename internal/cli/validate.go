@@ -63,7 +63,11 @@ exit 1 with nothing on stdout means the file could not be read.
 Findings are the library's, as reported. The decoder and the validator both
 report a duplicated xref, so DUPLICATE_XREF appears once per source. Duplicate
 detection (POTENTIAL_DUPLICATE) is slow on large files and runs only with
---min-severity info.`,
+--min-severity info.
+
+With --redact-living, the whole file is still validated, but a finding about
+a presumed-living person, or a line in their record, reads Living instead of
+its message.`,
 		Example: `  gedcom validate family.ged
   gedcom validate --min-severity error family.ged
   gedcom validate --format json family.ged | jq '.findings[] | select(.code == "ORPHANED_FAMS")'`,
@@ -80,7 +84,11 @@ detection (POTENTIAL_DUPLICATE) is slow on large files and runs only with
 			if !slices.Contains(severities, minSeverity) {
 				return usageError{fmt.Errorf("invalid --min-severity %q: want one of %s", minSeverity, strings.Join(severities, ", "))}
 			}
-			all, err := findings(args[0], minSeverity == "info")
+			living, err := readLivingOptions(cmd)
+			if err != nil {
+				return err
+			}
+			all, err := findings(args[0], minSeverity == "info", living)
 			if err != nil {
 				return err
 			}
@@ -111,7 +119,11 @@ detection (POTENTIAL_DUPLICATE) is slow on large files and runs only with
 //
 // Duplicate detection is the validator's costliest check and reports at info
 // severity, so it runs only when withDuplicates is set.
-func findings(path string, withDuplicates bool) ([]finding, error) {
+//
+// Validation sees the whole document. With --redact-living, the findings about
+// a record that redaction hides keep their code, xrefs and line but not their
+// message or context, which can quote a name, date or place.
+func findings(path string, withDuplicates bool, living livingOptions) ([]finding, error) {
 	res, err := decodeFileWithDiagnostics(path)
 	if err != nil {
 		return nil, err
@@ -144,6 +156,9 @@ func findings(path string, withDuplicates bool) ([]finding, error) {
 			XRef:        i.RecordXRef,
 			RelatedXRef: i.RelatedXRef,
 		})
+	}
+	if living.redact {
+		redactFindings(all, res.Document, hiddenRecords(res.Document, presumedLiving(res.Document, living.cfg)))
 	}
 	return all, nil
 }

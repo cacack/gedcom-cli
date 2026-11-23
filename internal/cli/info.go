@@ -5,6 +5,8 @@ import (
 	"io"
 	"sort"
 
+	"github.com/cacack/gedcom-go/v3/gedcom"
+
 	"github.com/spf13/cobra"
 )
 
@@ -31,10 +33,11 @@ func newInfoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			info, err := readInfo(args[0])
+			doc, _, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
 			}
+			info := readInfo(args[0], doc)
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), info)
 			}
@@ -43,12 +46,7 @@ func newInfoCmd() *cobra.Command {
 	}
 }
 
-func readInfo(path string) (*fileInfo, error) {
-	doc, err := decodeFile(path)
-	if err != nil {
-		return nil, err
-	}
-
+func readInfo(path string, doc *gedcom.Document) *fileInfo {
 	info := &fileInfo{
 		File:        path,
 		Records:     len(doc.Records),
@@ -62,7 +60,7 @@ func readInfo(path string) (*fileInfo, error) {
 	for _, record := range doc.Records {
 		info.RecordTypes[string(record.Type)]++
 	}
-	return info, nil
+	return info
 }
 
 func writeInfoText(w io.Writer, info *fileInfo) error {

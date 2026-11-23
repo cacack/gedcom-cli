@@ -14,19 +14,19 @@ import (
 const lineage = "testdata/lineage.ged"
 
 const (
-	ancestorsOfI1 = "1\t@I2@\tBert /Example/\t1920\t1990\n" +
-		"1\t@I3@\tCleo /Sample/\t\t\n" +
-		"2\t@I4@\tDan /Example/\t\t\n" +
-		"2\t@I5@\tEva /Other/\t\t\n" +
-		"2\t@I7@\tGus /Sample/\t\t\n" +
-		"2\t@I6@\tFaye /Example/\t\t\n" +
-		"3\t@I8@\tHal /Example/\t1850\t\n" +
-		"3\t@I9@\tIda /Example/\t\t\n"
-	descendantsOfI8 = "1\t@I4@\tDan /Example/\t\t\n" +
-		"1\t@I6@\tFaye /Example/\t\t\n" +
-		"2\t@I2@\tBert /Example/\t1920\t1990\n" +
-		"2\t@I3@\tCleo /Sample/\t\t\n" +
-		"3\t@I1@\tAnn /Example/\t1950\t\n"
+	ancestorsOfI1 = "1\t@I2@\tBert /Example/\t1920\t1990\tfalse\n" +
+		"1\t@I3@\tCleo /Sample/\t\t\ttrue\n" +
+		"2\t@I4@\tDan /Example/\t\t\ttrue\n" +
+		"2\t@I5@\tEva /Other/\t\t\ttrue\n" +
+		"2\t@I7@\tGus /Sample/\t\t\ttrue\n" +
+		"2\t@I6@\tFaye /Example/\t\t\ttrue\n" +
+		"3\t@I8@\tHal /Example/\t1850\t\tfalse\n" +
+		"3\t@I9@\tIda /Example/\t\t\ttrue\n"
+	descendantsOfI8 = "1\t@I4@\tDan /Example/\t\t\ttrue\n" +
+		"1\t@I6@\tFaye /Example/\t\t\ttrue\n" +
+		"2\t@I2@\tBert /Example/\t1920\t1990\tfalse\n" +
+		"2\t@I3@\tCleo /Sample/\t\t\ttrue\n" +
+		"3\t@I1@\tAnn /Example/\t1950\t\ttrue\n"
 )
 
 // firstLines is the first n lines of text.
@@ -53,7 +53,7 @@ func TestWalkText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, stdout, stderr := run(t, tt.args...)
+			code, stdout, stderr := run(t, append(tt.args, "--reference-year", referenceYear)...)
 			if code != ExitOK || stderr != "" {
 				t.Fatalf("exit = %d, stderr = %q", code, stderr)
 			}
@@ -65,7 +65,7 @@ func TestWalkText(t *testing.T) {
 }
 
 func TestWalkJSON(t *testing.T) {
-	code, stdout, stderr := run(t, "descendants", "--format", "json", lineage, "@I8@")
+	code, stdout, stderr := run(t, "descendants", "--format", "json", "--reference-year", referenceYear, lineage, "@I8@")
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
@@ -74,14 +74,26 @@ func TestWalkJSON(t *testing.T) {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
 	want := []map[string]any{
-		{"generation": float64(1), "xref": "@I4@", "name": "Dan /Example/", "birth": "", "death": ""},
-		{"generation": float64(1), "xref": "@I6@", "name": "Faye /Example/", "birth": "", "death": ""},
-		{"generation": float64(2), "xref": "@I2@", "name": "Bert /Example/", "birth": "1920", "death": "1990"},
-		{"generation": float64(2), "xref": "@I3@", "name": "Cleo /Sample/", "birth": "", "death": ""},
-		{"generation": float64(3), "xref": "@I1@", "name": "Ann /Example/", "birth": "1950", "death": ""},
+		{"generation": float64(1), "xref": "@I4@", "name": "Dan /Example/", "birth": "", "death": "", "living": true},
+		{"generation": float64(1), "xref": "@I6@", "name": "Faye /Example/", "birth": "", "death": "", "living": true},
+		{"generation": float64(2), "xref": "@I2@", "name": "Bert /Example/", "birth": "1920", "death": "1990", "living": false},
+		{"generation": float64(2), "xref": "@I3@", "name": "Cleo /Sample/", "birth": "", "death": "", "living": true},
+		{"generation": float64(3), "xref": "@I1@", "name": "Ann /Example/", "birth": "1950", "death": "", "living": true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v\nwant %v", got, want)
+	}
+}
+
+// TestWalkRedactLiving checks that --redact-living hides a presumed-living
+// relative's name and dates, keeping the xref.
+func TestWalkRedactLiving(t *testing.T) {
+	code, stdout, stderr := run(t, "descendants", "--redact-living", "--generations", "3", "--reference-year", referenceYear, lineage, "@I2@")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "1\t@I1@\tLiving\t\t\ttrue\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
 	}
 }
 
@@ -103,7 +115,7 @@ func TestRelativeRowsSkipsUnresolved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := relativeRows(doc, []gedcom.Relative{{XRef: "@I99@", Generation: 1}, {XRef: "@I2@", Generation: 1}})
+	rows := relativeRows(doc, nil, []gedcom.Relative{{XRef: "@I99@", Generation: 1}, {XRef: "@I2@", Generation: 1}})
 	if len(rows) != 1 || rows[0].(relativeRow).XRef != "@I2@" {
 		t.Errorf("rows = %+v, want only @I2@", rows)
 	}

@@ -70,8 +70,15 @@ gedcom list --limit 20 family.ged fam
 ```
 
 ```text
-@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978
-@I2@	Ben /Example/	21 JUL 1899
+@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978	false
+@I2@	Ben /Example/	21 JUL 1999		true
+```
+
+The last `indi` field, `living`, is whether gedcom-go presumes the person
+living (see [Conventions](#conventions)). To leave the living out:
+
+```sh
+gedcom list --format json family.ged indi | jq '.[] | select(.living | not)'
 ```
 
 With `--format json` each record is a flat object, so `jq` does the searching.
@@ -172,6 +179,21 @@ These hold for every command, so scripts and agents can rely on them:
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error) or `validate` found errors, `2` the command line was wrong.
 - **Input files are never modified.**
+- **`--redact-living`** replaces what the output says about a person presumed
+  living with `Living`: name, dates, places, notes, addresses, and in `get`
+  their raw lines. The xref, sex and family links stay, so the structure is
+  still readable. A family with a living spouse keeps only its spouses and
+  children, and a note record a hidden person or family points to reads
+  `Living`. `validate` still checks the whole file; a finding about a hidden
+  record reads `Living` instead of its message. Source, media, repository and
+  submitter records are not redacted, even when a hidden record cites them:
+  check their titles, file names and addresses yourself. Use it before pasting
+  output into an issue, a forum post or a chat.
+- **Who is presumed living** is gedcom-go's rule: no death, burial or
+  cremation, and no date of the person's, of a family they are a spouse in or
+  of their children, more than `--living-years` (default 110) before
+  `--reference-year` (default `0`, the current year). A person with no dates
+  at all is presumed living. Fix `--reference-year` for reproducible output.
 
 ## Development
 

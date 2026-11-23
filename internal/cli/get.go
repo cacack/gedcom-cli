@@ -32,7 +32,7 @@ with the library.`,
 			if err != nil {
 				return err
 			}
-			doc, err := decodeFile(args[0])
+			doc, _, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
 			}

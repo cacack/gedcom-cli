@@ -40,7 +40,7 @@ func newWalkCmd(name, first, second, order string, walk walkFunc) *cobra.Command
 given without its @ delimiters.
 
 Text output is tab-separated with no header. The fields, which are also the
-JSON keys, are generation, xref, name, birth and death: the fields of
+JSON keys, are generation, xref, name, birth, death and living: the fields of
 'gedcom list indi' with the generation first.
 
 Rows are ordered by generation, then in gedcom-go's order within it:
@@ -64,7 +64,7 @@ marriage) is listed once, at the generation of the shortest path.`, name, first,
 			if generations < 0 {
 				return usageError{fmt.Errorf("invalid --generations %d: want 0 (all) or more", generations)}
 			}
-			doc, err := decodeFile(args[0])
+			doc, living, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -76,7 +76,7 @@ marriage) is listed once, at the generation of the shortest path.`, name, first,
 			if doc.GetIndividual(xref) == nil {
 				return fmt.Errorf("%s is not an individual", xref)
 			}
-			rows := relativeRows(doc, walk(doc, xref, generations))
+			rows := relativeRows(doc, living, walk(doc, xref, generations))
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), rows)
 			}
@@ -90,15 +90,16 @@ marriage) is listed once, at the generation of the shortest path.`, name, first,
 // relativeRows maps a walk to rows in the walk's order. The result is never
 // nil, so that no relatives is [] in JSON. gedcom-go skips xrefs that are not
 // individuals, but only an unexported comment promises it, so a relative that
-// does not resolve is skipped here too rather than dereferenced.
-func relativeRows(doc *gedcom.Document, relatives []gedcom.Relative) []row {
+// does not resolve is skipped here too rather than dereferenced. living is the
+// set of individuals presumed living.
+func relativeRows(doc *gedcom.Document, living map[*gedcom.Individual]bool, relatives []gedcom.Relative) []row {
 	rows := make([]row, 0, len(relatives))
 	for _, r := range relatives {
 		i := doc.GetIndividual(r.XRef)
 		if i == nil {
 			continue
 		}
-		rows = append(rows, relativeRow{Generation: r.Generation, indiRow: indiRowOf(i)})
+		rows = append(rows, relativeRow{Generation: r.Generation, indiRow: indiRowOf(i, living[i])})
 	}
 	return rows
 }

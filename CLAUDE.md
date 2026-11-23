@@ -7,6 +7,7 @@
 - **Layout:** `cmd/gedcom/main.go` only calls `cli.Run`. Each command is one file in `internal/cli/`, registered in `newRootCmd`.
 - **Output contract** (README "Conventions"): results on stdout, diagnostics on stderr, `--format json` on every command, exit codes `ExitOK`/`ExitError`/`ExitUsage`. Return `usageError` for invocation mistakes.
 - **Every command needs** an `Example` in its help (agents learn the tool from `--help`) and tests through `Run` covering text, JSON and exit codes.
+- **Every command honors `--redact-living`** (README "Conventions"): decode through `openDocument` (`living.go`), or, for a command that must see the whole file (`validate`) or writes one, redact its results with `hiddenRecords`. Add the command to `TestRedactLiving`.
 - **Never write to an input file.** Commands that change data write a new file.
 - **Write commands keep the layout.** Decode with `decodeForWrite`, encode with `encodeDocument` (`write.go`), and add the command to `writeCommands` in `roundtrip_test.go`: with no change requested its output must be byte-identical (CONSTITUTION.md C2).
 - Test data must be synthetic: no real people.
