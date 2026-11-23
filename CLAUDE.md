@@ -10,6 +10,6 @@
 - **Never write to an input file.** Commands that change data write a new file.
 - Test data must be synthetic: no real people.
 
-**Releases:** release-please cuts them from conventional commits on `main`; only `feat`, `fix` and `perf` produce one (README "Development"). Never tag or edit `CHANGELOG.md` by hand.
+**Releases:** release-please cuts them from conventional commits on `main`; only `feat`, `fix` and `perf` produce one (README "Development"). Never tag or edit `CHANGELOG.md` by hand. Put issue references (`Closes #N`, `Refs #N`) in the PR description, never in a commit message: release-please turns a commit's reference into "closes", and the release PR then closes the issue.
 
 `make check` runs what CI runs (vet, race tests, gofmt).

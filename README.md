@@ -74,6 +74,11 @@ and merging it tags the release and publishes the binaries. Other types, such
 as `docs`, `ci` and `chore`, do not release on their own. Until v1.0 a breaking
 change bumps the minor version.
 
+Link issues from the pull request description (`Closes #N`, or `Refs #N` for
+partial work), not from commit messages. release-please writes any issue a
+commit mentions into the release PR as "closes", so the release would close an
+issue that was only referenced.
+
 ## License
 
 [MIT](LICENSE)
