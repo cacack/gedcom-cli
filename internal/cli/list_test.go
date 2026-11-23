@@ -10,7 +10,7 @@ import (
 )
 
 // listCases is what each record type lists from the records fixture, in file
-// order.
+// order, with the living test made in referenceYear.
 var listCases = []struct {
 	kind string
 	text string
@@ -18,13 +18,13 @@ var listCases = []struct {
 }{
 	{
 		kind: "indi",
-		text: "@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\n" +
-			"@I2@\tDell /Sample/\t21 JUL 1899\t2 FEB 1960\n" +
-			"@I3@\tEdie /Sample/\t9 SEP 1925\t\n",
+		text: "@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\tfalse\n" +
+			"@I2@\tDell /Sample/\t21 JUL 1899\t2 FEB 1960\tfalse\n" +
+			"@I3@\tEdie /Sample/\t9 SEP 1925\t\ttrue\n",
 		json: []map[string]any{
-			{"xref": "@I1@", "name": "Cora /Sample/", "birth": "3 MAR 1901", "death": "14 NOV 1978"},
-			{"xref": "@I2@", "name": "Dell /Sample/", "birth": "21 JUL 1899", "death": "2 FEB 1960"},
-			{"xref": "@I3@", "name": "Edie /Sample/", "birth": "9 SEP 1925", "death": ""},
+			{"xref": "@I1@", "name": "Cora /Sample/", "birth": "3 MAR 1901", "death": "14 NOV 1978", "living": false},
+			{"xref": "@I2@", "name": "Dell /Sample/", "birth": "21 JUL 1899", "death": "2 FEB 1960", "living": false},
+			{"xref": "@I3@", "name": "Edie /Sample/", "birth": "9 SEP 1925", "death": "", "living": true},
 		},
 	},
 	{
@@ -60,7 +60,7 @@ var listCases = []struct {
 func TestListText(t *testing.T) {
 	for _, tt := range listCases {
 		t.Run(tt.kind, func(t *testing.T) {
-			code, stdout, stderr := run(t, "list", records, tt.kind)
+			code, stdout, stderr := run(t, "list", "--reference-year", referenceYear, records, tt.kind)
 			if code != ExitOK || stderr != "" {
 				t.Fatalf("exit = %d, stderr = %q", code, stderr)
 			}
@@ -74,7 +74,7 @@ func TestListText(t *testing.T) {
 func TestListJSON(t *testing.T) {
 	for _, tt := range listCases {
 		t.Run(tt.kind, func(t *testing.T) {
-			code, stdout, stderr := run(t, "list", "--format", "json", records, tt.kind)
+			code, stdout, stderr := run(t, "list", "--format", "json", "--reference-year", referenceYear, records, tt.kind)
 			if code != ExitOK || stderr != "" {
 				t.Fatalf("exit = %d, stderr = %q", code, stderr)
 			}
@@ -112,7 +112,7 @@ func TestListLimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.limit, func(t *testing.T) {
-			code, stdout, stderr := run(t, "list", "--limit", tt.limit, records, "indi")
+			code, stdout, stderr := run(t, "list", "--limit", tt.limit, "--reference-year", referenceYear, records, "indi")
 			if code != ExitOK || stderr != "" {
 				t.Fatalf("exit = %d, stderr = %q", code, stderr)
 			}
@@ -164,7 +164,7 @@ func TestListSparseRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := map[string]string{
-		"indi": "@I1@\t\tsometime in spring\t\n",
+		"indi": "@I1@\t\tsometime in spring\t\ttrue\n", // no date the library can place
 		"fam":  "@F1@\t\t\t\t0\n",
 		"sour": "@S1@\tLine one line two\t\n",
 		"obje": "@O1@\t\t\t\n",

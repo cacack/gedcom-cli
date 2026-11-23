@@ -19,20 +19,20 @@ const (
 )
 
 func TestDuplicatesText(t *testing.T) {
-	code, stdout, stderr := run(t, "duplicates", duplicatesA, duplicatesB)
+	code, stdout, stderr := run(t, "duplicates", "--reference-year", referenceYear, duplicatesA, duplicatesB)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	want := "0.90\t@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\t@I2@\tCora /Sample/\t1901\t\n" +
-		"0.90\t@I2@\tAnsel /Example/\t1880\t\t@I1@\tAnsel /Example/\tABT 1880\t1951\n" +
-		"0.70\t@I3@\tDell /Sample/\t21 JUL 1899\t\t@I3@\tDell /Sample/\t\t\n"
+	want := "0.90\t@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\tfalse\t@I2@\tCora /Sample/\t1901\t\tfalse\n" +
+		"0.90\t@I2@\tAnsel /Example/\t1880\t\tfalse\t@I1@\tAnsel /Example/\tABT 1880\t1951\tfalse\n" +
+		"0.70\t@I3@\tDell /Sample/\t21 JUL 1899\t\tfalse\t@I3@\tDell /Sample/\t\t\ttrue\n"
 	if stdout != want {
 		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
 	}
 }
 
 func TestDuplicatesJSON(t *testing.T) {
-	code, stdout, stderr := run(t, "duplicates", "--format", "json", duplicatesA, duplicatesB)
+	code, stdout, stderr := run(t, "duplicates", "--format", "json", "--reference-year", referenceYear, duplicatesA, duplicatesB)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
@@ -40,16 +40,29 @@ func TestDuplicatesJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
-	person := func(xref, name, birth, death string) map[string]any {
-		return map[string]any{"xref": xref, "name": name, "birth": birth, "death": death}
+	person := func(xref, name, birth, death string, living bool) map[string]any {
+		return map[string]any{"xref": xref, "name": name, "birth": birth, "death": death, "living": living}
 	}
 	want := []map[string]any{
-		{"score": 0.9, "a": person("@I1@", "Cora /Sample/", "3 MAR 1901", "14 NOV 1978"), "b": person("@I2@", "Cora /Sample/", "1901", "")},
-		{"score": 0.9, "a": person("@I2@", "Ansel /Example/", "1880", ""), "b": person("@I1@", "Ansel /Example/", "ABT 1880", "1951")},
-		{"score": 0.7, "a": person("@I3@", "Dell /Sample/", "21 JUL 1899", ""), "b": person("@I3@", "Dell /Sample/", "", "")},
+		{"score": 0.9, "a": person("@I1@", "Cora /Sample/", "3 MAR 1901", "14 NOV 1978", false), "b": person("@I2@", "Cora /Sample/", "1901", "", false)},
+		{"score": 0.9, "a": person("@I2@", "Ansel /Example/", "1880", "", false), "b": person("@I1@", "Ansel /Example/", "ABT 1880", "1951", false)},
+		{"score": 0.7, "a": person("@I3@", "Dell /Sample/", "21 JUL 1899", "", false), "b": person("@I3@", "Dell /Sample/", "", "", true)},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v\nwant %v", got, want)
+	}
+}
+
+// TestDuplicatesRedactLiving checks that detection still sees a presumed-living
+// person, and that --redact-living hides their name in the pair printed.
+func TestDuplicatesRedactLiving(t *testing.T) {
+	code, stdout, stderr := run(t, "duplicates", "--redact-living", "--reference-year", referenceYear, duplicatesA, duplicatesB)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	want := "0.70\t@I3@\tDell /Sample/\t21 JUL 1899\t\tfalse\t@I3@\tLiving\t\t\ttrue\n"
+	if !strings.HasSuffix(stdout, want) {
+		t.Errorf("stdout =\n%s\nwant it to end with\n%s", stdout, want)
 	}
 }
 

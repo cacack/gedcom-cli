@@ -20,10 +20,11 @@ var listTypes = []string{"indi", "fam", "sour", "repo", "obje"}
 type row interface{ fields() []string }
 
 type indiRow struct {
-	XRef  string `json:"xref"`
-	Name  string `json:"name"`
-	Birth string `json:"birth"`
-	Death string `json:"death"`
+	XRef   string `json:"xref"`
+	Name   string `json:"name"`
+	Birth  string `json:"birth"`
+	Death  string `json:"death"`
+	Living bool   `json:"living"`
 }
 
 type famRow struct {
@@ -52,7 +53,9 @@ type objeRow struct {
 	Format string `json:"format"`
 }
 
-func (r indiRow) fields() []string { return []string{r.XRef, r.Name, r.Birth, r.Death} }
+func (r indiRow) fields() []string {
+	return []string{r.XRef, r.Name, r.Birth, r.Death, strconv.FormatBool(r.Living)}
+}
 func (r famRow) fields() []string {
 	return []string{r.XRef, r.Husband, r.Wife, r.Marriage, strconv.Itoa(r.Children)}
 }
@@ -69,7 +72,7 @@ func newListCmd() *cobra.Command {
 Text output is tab-separated with no header. The fields, which are also the
 JSON keys, are:
 
-  indi  xref, name, birth, death
+  indi  xref, name, birth, death, living (true or false)
   fam   xref, husband, wife, marriage, children (a count)
   sour  xref, title, author
   repo  xref, name
@@ -81,10 +84,16 @@ tab) are printed as spaces; JSON keeps the value as it is.
 
 For obje, title and format are those of the first FILE. A record that puts
 TITL and FORM beside FILE instead of under it (the GEDCOM 5.5 layout) lists
-them empty; 'gedcom get' shows the whole record.`,
+them empty; 'gedcom get' shows the whole record.
+
+living is whether gedcom-go presumes the person living: no death, burial or
+cremation, and no date of theirs, of a family they are a spouse in or of
+their children, more than --living-years before --reference-year. A person
+with no dates at all is presumed living.`,
 		Example: `  gedcom list family.ged indi
   gedcom list --limit 20 family.ged fam
-  gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'`,
+  gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
+  gedcom list --format json family.ged indi | jq '.[] | select(.living | not)'`,
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := outputFormat(cmd)
@@ -102,11 +111,11 @@ them empty; 'gedcom get' shows the whole record.`,
 			if !slices.Contains(listTypes, kind) {
 				return usageError{fmt.Errorf("unknown record type %q: want one of %s", args[1], strings.Join(listTypes, ", "))}
 			}
-			doc, err := decodeFile(args[0])
+			doc, living, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			rows := listRows(doc, kind, limit)
+			rows := listRows(doc, living, kind, limit)
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), rows)
 			}
@@ -118,10 +127,11 @@ them empty; 'gedcom get' shows the whole record.`,
 }
 
 // listRows builds the rows for kind, which must be one of listTypes.
-func listRows(doc *gedcom.Document, kind string, limit int) []row {
+// living is the set of individuals presumed living.
+func listRows(doc *gedcom.Document, living map[*gedcom.Individual]bool, kind string, limit int) []row {
 	switch kind {
 	case "indi":
-		return rowsOf(doc.Individuals(), limit, newIndiRow)
+		return rowsOf(doc.Individuals(), limit, func(i *gedcom.Individual) row { return indiRowOf(i, living[i]) })
 	case "fam":
 		return rowsOf(doc.Families(), limit, newFamRow)
 	case "sour":
@@ -146,15 +156,15 @@ func rowsOf[T any](entities []T, limit int, toRow func(T) row) []row {
 	return rows
 }
 
-func newIndiRow(i *gedcom.Individual) row { return indiRowOf(i) }
-
-// indiRowOf is an individual as list indi prints it.
-func indiRowOf(i *gedcom.Individual) indiRow {
+// indiRowOf is an individual as list indi prints it; living is whether it is
+// presumed living.
+func indiRowOf(i *gedcom.Individual, living bool) indiRow {
 	return indiRow{
-		XRef:  i.XRef,
-		Name:  i.FullName(),
-		Birth: eventDate(i.BirthEvent()),
-		Death: eventDate(i.DeathEvent()),
+		XRef:   i.XRef,
+		Name:   i.FullName(),
+		Birth:  eventDate(i.BirthEvent()),
+		Death:  eventDate(i.DeathEvent()),
+		Living: living,
 	}
 }
 

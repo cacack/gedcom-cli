@@ -36,10 +36,11 @@ for a researcher to review, not conclusions: nothing is merged, neither file is
 changed and no combined file is written.
 
 Text output is one tab-separated line per pair with no header: score, then
-xref, name, birth and death from file A, then the same from file B. Xrefs are
-each file's own, so @I1@ on both sides can be two different people. In JSON,
-each pair is an object with score, a and b, where a and b have list indi's
-keys.
+xref, name, birth, death and living from file A, then the same from file B.
+Xrefs are each file's own, so @I1@ on both sides can be two different people.
+In JSON, each pair is an object with score, a and b, where a and b have list
+indi's keys. Detection sees both files whole; --redact-living hides what the
+pairs print about a presumed-living person.
 
 Pairs are sorted by score, highest first, then by file order in A and in B.
 The score runs from 0 to 1 and is rounded to two decimals; --min-score drops
@@ -62,6 +63,10 @@ says so, and some pairs may be missing.`,
 			if !(minScore >= 0 && minScore <= 1) {
 				return usageError{fmt.Errorf("invalid --min-score %v: want a number from 0 to 1", minScore)}
 			}
+			opts, err := readLivingOptions(cmd)
+			if err != nil {
+				return err
+			}
 			a, err := decodeFile(args[0])
 			if err != nil {
 				return err
@@ -70,11 +75,18 @@ says so, and some pairs may be missing.`,
 			if err != nil {
 				return err
 			}
+			// Detection sees the unredacted files; --redact-living then
+			// redacts the individuals in place, so the pairs print redacted.
 			report := findDuplicatesBetween(a, b, minScore)
 			for _, issue := range report.LimitIssues {
 				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s (%s)\n", oneLine(issue.Message), issue.Code)
 			}
-			pairs := duplicatePairs(a, b, report.Pairs, minScore)
+			livingA, livingB := presumedLiving(a, opts.cfg), presumedLiving(b, opts.cfg)
+			if opts.redact {
+				redactDocument(hiddenRecords(a, livingA))
+				redactDocument(hiddenRecords(b, livingB))
+			}
+			pairs := duplicatePairs(a, b, livingA, livingB, report.Pairs, minScore)
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), pairs)
 			}
@@ -113,8 +125,9 @@ func roundScore(confidence float64) float64 { return math.Round(confidence*100) 
 // duplicatePairs keeps the library's pairs whose rounded score is at least
 // minScore and sorts them by that score and then by file order, so that output
 // is stable and agrees with the printed scores. The result is never nil, so
-// that no pairs is [] in JSON.
-func duplicatePairs(a, b *gedcom.Document, found []validator.DuplicatePair, minScore float64) []duplicatePair {
+// that no pairs is [] in JSON. livingA and livingB are the individuals presumed
+// living in each file.
+func duplicatePairs(a, b *gedcom.Document, livingA, livingB map[*gedcom.Individual]bool, found []validator.DuplicatePair, minScore float64) []duplicatePair {
 	orderA, orderB := fileOrder(a), fileOrder(b)
 	pairs := make([]duplicatePair, 0, len(found))
 	for _, p := range found {
@@ -124,8 +137,8 @@ func duplicatePairs(a, b *gedcom.Document, found []validator.DuplicatePair, minS
 		}
 		pairs = append(pairs, duplicatePair{
 			Score:  score,
-			A:      indiRowOf(p.Individual1),
-			B:      indiRowOf(p.Individual2),
+			A:      indiRowOf(p.Individual1, livingA[p.Individual1]),
+			B:      indiRowOf(p.Individual2, livingB[p.Individual2]),
 			orderA: orderA[p.Individual1],
 			orderB: orderB[p.Individual2],
 		})
