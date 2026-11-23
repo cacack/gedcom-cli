@@ -116,15 +116,21 @@ func decodeFile(path string) (*gedcom.Document, error) {
 }
 
 // decodeFileWithDiagnostics is decodeFile keeping what the decoder could not
-// read cleanly. Every command opens and decodes its input here.
+// read cleanly.
 func decodeFileWithDiagnostics(path string) (*decoder.DecodeResult, error) {
+	return decodeFileWithOptions(path, decoder.DefaultOptions())
+}
+
+// decodeFileWithOptions is decodeFileWithDiagnostics with the decoder's
+// options given. Every command opens and decodes its input here.
+func decodeFileWithOptions(path string, opts *decoder.DecodeOptions) (*decoder.DecodeResult, error) {
 	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	res, err := decoder.DecodeWithDiagnostics(f, decoder.DefaultOptions())
+	res, err := decoder.DecodeWithDiagnostics(f, opts)
 	if err != nil {
 		return nil, fmt.Errorf("decode %s: %w", path, err)
 	}

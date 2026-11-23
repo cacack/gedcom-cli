@@ -8,6 +8,7 @@
 - **Output contract** (README "Conventions"): results on stdout, diagnostics on stderr, `--format json` on every command, exit codes `ExitOK`/`ExitError`/`ExitUsage`. Return `usageError` for invocation mistakes.
 - **Every command needs** an `Example` in its help (agents learn the tool from `--help`) and tests through `Run` covering text, JSON and exit codes.
 - **Never write to an input file.** Commands that change data write a new file.
+- **Write commands keep the layout.** Decode with `decodeForWrite`, encode with `encodeDocument` (`write.go`), and add the command to `writeCommands` in `roundtrip_test.go`: with no change requested its output must be byte-identical (CONSTITUTION.md C2).
 - Test data must be synthetic: no real people.
 
 **Releases:** release-please cuts them from conventional commits on `main`; only `feat`, `fix` and `perf` produce one (README "Development"). Never tag or edit `CHANGELOG.md` by hand. Put issue references (`Closes #N`, `Refs #N`) in the PR description, never in a commit message: release-please turns a commit's reference into "closes", and the release PR then closes the issue. PR titles are plain prose, never conventional commits (CI checks): the merge commit copies the title, and release-please would count it twice.

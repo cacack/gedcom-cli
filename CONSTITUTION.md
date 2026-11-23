@@ -40,7 +40,7 @@ We'll know this is working if:
 Check: `make check` exits 0 on `main`
 
 **C2 — Edits are minimal: a file passed through any write command with no change requested comes back byte-identical.**
-Check: <TODO> — no write command exists yet. gedcom-go's default decode and encode does not yet preserve trailing whitespace, indentation or blank lines, so write commands wait on that; the first one must land with a round-trip test and name it here.
+Check: `go test ./internal/cli -run TestRoundTripByteIdentical` exits 0
 
 **C3 — Every command explains itself: its help carries a summary and a runnable example.**
 Check: `go test ./internal/cli -run TestCommandsDocumented` exits 0

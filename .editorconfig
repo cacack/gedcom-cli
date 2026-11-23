@@ -14,3 +14,11 @@ trim_trailing_whitespace = false
 
 [Makefile]
 indent_style = tab
+
+[internal/cli/testdata/roundtrip/**]
+# Round-trip fixtures hold this layout on purpose: BOM, CRLF, trailing spaces
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = false
+indent_style = unset

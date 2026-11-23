@@ -1,0 +1,14 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 BIRT 
+2 DATE 3 MAR 1901
+1 NOTE First line
+2 CONT 
+2 CONT third line
+0 TRLR
