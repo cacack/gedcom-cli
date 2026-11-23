@@ -185,8 +185,10 @@ These hold for every command, so scripts and agents can rely on them:
   still readable. A family with a living spouse keeps only its spouses and
   children, and a note record a hidden person or family points to reads
   `Living`. `validate` still checks the whole file; a finding about a hidden
-  record reads `Living` instead of its message. Use it before pasting output
-  into an issue, a forum post or a chat.
+  record reads `Living` instead of its message. Source, media, repository and
+  submitter records are not redacted, even when a hidden record cites them:
+  check their titles, file names and addresses yourself. Use it before pasting
+  output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or
   cremation, and no date of the person's, of a family they are a spouse in or
   of their children, more than `--living-years` (default 110) before

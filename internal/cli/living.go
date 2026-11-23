@@ -21,8 +21,8 @@ const redactedValue = "Living"
 func addLivingFlags(root *cobra.Command) {
 	flags := root.PersistentFlags()
 	flags.Bool("redact-living", false, "replace a presumed-living person's name, dates, places, notes and addresses with "+redactedValue+", keeping the xref")
-	flags.Int("living-years", gedcom.DefaultLivingMaxAge, "presume a person living unless they died or a date of theirs is more than this many years before the reference year")
-	flags.Int("reference-year", 0, "the year the living test is made in; 0 means the current year")
+	flags.Int("living-years", gedcom.DefaultLivingMaxAge, "presume a person living unless they died or a date of theirs is more than this many years before the reference year; affects list indi and --redact-living")
+	flags.Int("reference-year", 0, "the year the living test is made in; 0 means the current year; affects list indi and --redact-living")
 }
 
 // livingOptions are the living flags of one invocation.

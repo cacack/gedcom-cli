@@ -38,9 +38,6 @@ func newInfoCmd() *cobra.Command {
 				return err
 			}
 			info := readInfo(args[0], doc)
-			if err != nil {
-				return err
-			}
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), info)
 			}
