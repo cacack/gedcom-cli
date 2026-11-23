@@ -19,7 +19,7 @@ import (
 // Exit codes. They are part of the command's contract with scripts and agents.
 const (
 	ExitOK    = 0 // the command succeeded
-	ExitError = 1 // the command ran and failed (unreadable file, decode error)
+	ExitError = 1 // the command ran and failed (unreadable file, decode error, validate found errors)
 	ExitUsage = 2 // the command line was wrong (unknown flag, missing argument)
 )
 
@@ -70,7 +70,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().String("format", formatText, `output format: "text" or "json"`)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
-	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd())
+	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd(), newValidateCmd())
 	return root
 }
 

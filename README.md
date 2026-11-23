@@ -6,8 +6,8 @@ GEDCOM genealogy files. It is a thin wrapper over
 terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
-**Status: early.** Only `info` exists so far. Flags and JSON output may change
-until v1.0.
+**Status: early.** The commands so far are `info`, `get`, `list` and
+`validate`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -58,7 +58,8 @@ gedcom get --format json family.ged @I1@
 ```
 
 `get --format json` prints an array of records in gedcom-go's entity shape,
-which may change with the library.
+which may change with the library. Its keys are the library's field names
+(`XRef`, `Names`), not the lowercase keys of `list` and `validate`.
 
 `list` prints one line per record of a type (`indi`, `fam`, `sour`, `repo` or
 `obje`), tab-separated and in file order; `--limit N` stops after N records:
@@ -80,7 +81,40 @@ To find people by surname:
 gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
 ```
 
-`gedcom list --help` names the fields of each type.
+`gedcom list --help` names the fields of each type. One known gap: for `obje`,
+a record that puts `TITL` and `FORM` beside `FILE` instead of under it (the
+GEDCOM 5.5 layout) lists its title and format empty; `get` shows the whole
+record.
+
+`validate` reports what the decoder could not read cleanly (`decode`) and what
+gedcom-go's validator finds in the records (`validate`), grouped by severity
+with a count per group. Each line gives where the finding is, its code, its
+message and its source, tab-separated:
+
+```sh
+gedcom validate family.ged
+gedcom validate --min-severity error family.ged
+gedcom validate --format json family.ged | jq .counts
+```
+
+```text
+error (2)
+  line 13	INVALID_LEVEL	invalid level number (context: "this line is not GEDCOM")	decode
+  @I1@ line 18	ORPHANED_FAMS	FAMS reference to non-existent family @F9@ (related: @F9@)	validate
+warning (1)
+  @I2@ line 19	MISSING_NAME	Individual record has no NAME	validate
+```
+
+A file with nothing to report prints `family.ged: no findings`.
+`--min-severity error|warning|info` (default `warning`) limits the findings
+shown and counted. It does not change the exit code, which is `1` whenever the
+file has an error-severity finding, with the report still on stdout and a
+one-line summary on stderr. The JSON report names the filter in `minSeverity`.
+
+Findings are gedcom-go's, as reported. The decoder and the validator both
+report a duplicated xref, so `DUPLICATE_XREF` appears once per source.
+Duplicate detection (`POTENTIAL_DUPLICATE`) is slow on large files and runs
+only with `--min-severity info`.
 
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
@@ -91,7 +125,7 @@ These hold for every command, so scripts and agents can rely on them:
 - **Results go to stdout, diagnostics to stderr.** Stderr is empty on success.
 - **`--format json`** gives machine-readable output; the default is text.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
-  error), `2` the command line was wrong.
+  error) or `validate` found errors, `2` the command line was wrong.
 - **Input files are never modified.**
 
 ## Development
