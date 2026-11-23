@@ -1,0 +1,339 @@
+package cli
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// mediaGED has one reference of each status: @O1@ resolves, @O2@ does not,
+// and @I1@'s inline links are a URL, an absolute path and a backslash path.
+const mediaGED = `0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 OBJE
+2 FILE https://example.com/ada.jpg
+2 FORM jpg
+1 OBJE
+2 FILE C:\scans\ada.jpg
+2 FORM jpg
+1 OBJE
+2 FILE photos\ben.jpg
+2 FORM jpg
+0 @I2@ INDI
+1 NAME Ben /Example/
+1 SEX M
+0 @F1@ FAM
+1 HUSB @I2@
+0 @S1@ SOUR
+1 TITL Example Parish Register
+0 @R1@ REPO
+1 NAME Example Archive
+0 @O1@ OBJE
+1 FILE photos/ada.jpg
+2 FORM jpg
+0 @O2@ OBJE
+1 FILE photos/gone.jpg
+2 FORM jpg
+0 TRLR
+`
+
+// media70GED is a 7.0 file with no media.
+const media70GED = `0 HEAD
+1 GEDC
+2 VERS 7.0
+0 @I1@ INDI
+1 NAME Ada /Example/
+0 TRLR
+`
+
+// mediaFixture writes ged and a media folder holding the given files to a
+// temporary directory, returning the GEDCOM's path and the folder's.
+func mediaFixture(t *testing.T, ged string, files ...string) (file, root string) {
+	t.Helper()
+	dir := t.TempDir()
+	file = filepath.Join(dir, "family.ged")
+	if err := os.WriteFile(file, []byte(ged), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root = filepath.Join(dir, "media")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return file, root
+}
+
+func TestMediaCheckText(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/ada.jpg", "photos/ben.jpg", "photos/extra.jpg", ".hidden/x.jpg", "docs/.DS_Store")
+	code, stdout, stderr := run(t, "media", "check", "--root", root, "--unreferenced", file)
+	if code != ExitError {
+		t.Fatalf("exit = %d, want %d (stderr %q)", code, ExitError, stderr)
+	}
+	if stderr != "gedcom: 1 missing media file in "+file+"\n" {
+		t.Errorf("stderr = %q", stderr)
+	}
+	want := "url\t@I1@\tline 10\thttps://example.com/ada.jpg\n" +
+		"absolute\t@I1@\tline 13\tC:\\scans\\ada.jpg\n" +
+		"ok\t@I1@\tline 16\tphotos\\ben.jpg\n" +
+		"ok\t@O1@\tline 28\tphotos/ada.jpg\n" +
+		"missing\t@O2@\tline 31\tphotos/gone.jpg\n" +
+		"unreferenced\t\t\tphotos/extra.jpg\n"
+	if stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
+}
+
+func TestMediaCheckJSON(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/ada.jpg", "photos/gone.jpg", "photos/ben.jpg")
+	for _, unreferenced := range []bool{false, true} {
+		args := []string{"media", "check", "--format", "json", "--root", root, file}
+		if unreferenced {
+			args = append(args, "--unreferenced")
+		}
+		code, stdout, stderr := run(t, args...)
+		if code != ExitOK || stderr != "" {
+			t.Fatalf("exit = %d, stderr = %q", code, stderr)
+		}
+		var report mediaCheckReport
+		dec := json.NewDecoder(strings.NewReader(stdout))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&report); err != nil {
+			t.Fatalf("stdout is not a media check report: %v\n%s", err, stdout)
+		}
+		var statuses []string
+		for _, ref := range report.References {
+			statuses = append(statuses, ref.Status)
+		}
+		if got := strings.Join(statuses, ","); got != "url,absolute,ok,ok,ok" {
+			t.Errorf("statuses = %s", got)
+		}
+		if report.References[3] != (mediaRef{XRef: "@O1@", Line: 28, File: "photos/ada.jpg", Status: "ok"}) {
+			t.Errorf("reference = %+v", report.References[3])
+		}
+		if unreferenced != strings.Contains(stdout, `"unreferenced"`) {
+			t.Errorf("unreferenced key present = %v with --unreferenced %v", !unreferenced, unreferenced)
+		}
+		if unreferenced && (report.Unreferenced == nil || len(*report.Unreferenced) != 0) {
+			t.Errorf("unreferenced = %v, want []", report.Unreferenced)
+		}
+	}
+}
+
+func TestMediaCheckUsage(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED)
+	if code, _, _ := run(t, "media", "check", file); code != ExitUsage {
+		t.Errorf("no --root: exit = %d, want %d", code, ExitUsage)
+	}
+	if code, _, _ := run(t, "media", "check", "--root", filepath.Join(root, "nope"), file); code != ExitError {
+		t.Errorf("missing --root: exit = %d, want %d", code, ExitError)
+	}
+	if code, _, _ := run(t, "media", "nope"); code != ExitUsage {
+		t.Errorf("unknown subcommand: exit = %d, want %d", code, ExitUsage)
+	}
+}
+
+// addedLines returns the lines of got that are not in want, failing unless
+// got is want with only those lines inserted: every other line, and so every
+// record not involved, comes back exactly as it was.
+func addedLines(t *testing.T, got, want string) []string {
+	t.Helper()
+	g, w := strings.SplitAfter(got, "\n"), strings.SplitAfter(want, "\n")
+	var added []string
+	i := 0
+	for _, line := range g {
+		if i < len(w) && line == w[i] {
+			i++
+			continue
+		}
+		added = append(added, strings.TrimSuffix(line, "\n"))
+	}
+	if i != len(w) {
+		t.Fatalf("output lost input line %d %q:\n%s", i+1, w[i], got)
+	}
+	return added
+}
+
+func readFile(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestMediaAddCreates551(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/cara.jpg")
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--root", root, "--to", "I2", "--path", "photos/cara.jpg", "--title", "Cara, 1920", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "@I2@\t@O3@\tcreated\tphotos/cara.jpg\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	got := readFile(t, out)
+	added := addedLines(t, got, mediaGED)
+	want := []string{"1 OBJE @O3@", "0 @O3@ OBJE", "1 FILE photos/cara.jpg", "2 FORM jpg", "2 TITL Cara, 1920"}
+	if strings.Join(added, "\n") != strings.Join(want, "\n") {
+		t.Errorf("added lines = %q, want %q", added, want)
+	}
+	if !strings.Contains(got, "1 SEX M\n1 OBJE @O3@\n0 @F1@ FAM") {
+		t.Errorf("link is not under @I2@:\n%s", got)
+	}
+
+	// Again, on the output: nothing changes.
+	again := filepath.Join(t.TempDir(), "again.ged")
+	code, stdout, stderr = run(t, "media", "add", out, "--root", root, "--to", "I2", "--path", "photos/cara.jpg", "--title", "Cara, 1920", "-o", again)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("second run: exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "@I2@\t@O3@\tunchanged\tphotos/cara.jpg\n"; stdout != want {
+		t.Errorf("second run stdout = %q, want %q", stdout, want)
+	}
+	if readFile(t, again) != got {
+		t.Errorf("second run changed the file:\n%s", readFile(t, again))
+	}
+}
+
+func TestMediaAddCreates70(t *testing.T) {
+	file, _ := mediaFixture(t, media70GED)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, _, stderr := run(t, "media", "add", file, "--to", "@I1@", "--path", `docs\register.pdf`, "--title", "Register", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	added := addedLines(t, readFile(t, out), media70GED)
+	want := []string{"1 OBJE @O1@", "0 @O1@ OBJE", "1 FILE docs/register.pdf", "2 FORM application/pdf", "2 TITL Register"}
+	if strings.Join(added, "\n") != strings.Join(want, "\n") {
+		t.Errorf("added lines = %q, want %q", added, want)
+	}
+	if code, stdout, _ := run(t, "validate", out); code != ExitOK {
+		t.Errorf("output does not validate:\n%s", stdout)
+	}
+}
+
+func TestMediaAddReusesObject(t *testing.T) {
+	file, _ := mediaFixture(t, mediaGED)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", "--format", "json", file, "--to", "F1", "--path", "photos/ada.jpg", "--form", "png", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []mediaAdded
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(got) != 1 || got[0] != (mediaAdded{To: "@F1@", Object: "@O1@", Path: "photos/ada.jpg", Action: "linked"}) {
+		t.Errorf("result = %+v", got)
+	}
+	if added := addedLines(t, readFile(t, out), mediaGED); len(added) != 1 || added[0] != "1 OBJE @O1@" {
+		t.Errorf("added lines = %q, want only the link", added)
+	}
+}
+
+func TestMediaAddBatch(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/cara.jpg", "docs/register.pdf")
+	batch := filepath.Join(t.TempDir(), "links.tsv")
+	rows := "# xref\tpath\ttitle\n" +
+		"I2\tphotos/cara.jpg\tCara\n" +
+		"\n" +
+		"@S1@\tdocs/register.pdf\n" +
+		"F1\tphotos/cara.jpg\n" +
+		"I2\tphotos/cara.jpg\n"
+	if err := os.WriteFile(batch, []byte(rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--root", root, "--batch", batch, "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	want := "@I2@\t@O3@\tcreated\tphotos/cara.jpg\n" +
+		"@S1@\t@O4@\tcreated\tdocs/register.pdf\n" +
+		"@F1@\t@O3@\tlinked\tphotos/cara.jpg\n" +
+		"@I2@\t@O3@\tunchanged\tphotos/cara.jpg\n"
+	if stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
+	added := addedLines(t, readFile(t, out), mediaGED)
+	wantAdded := []string{"1 OBJE @O3@", "1 OBJE @O3@", "1 OBJE @O4@",
+		"0 @O3@ OBJE", "1 FILE photos/cara.jpg", "2 FORM jpg", "2 TITL Cara",
+		"0 @O4@ OBJE", "1 FILE docs/register.pdf", "2 FORM pdf"}
+	if strings.Join(added, "\n") != strings.Join(wantAdded, "\n") {
+		t.Errorf("added lines = %q, want %q", added, wantAdded)
+	}
+}
+
+func TestMediaAddBatchAllOrNone(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/cara.jpg")
+	batch := filepath.Join(t.TempDir(), "links.tsv")
+	rows := "I2\tphotos/cara.jpg\n" +
+		"I9\tphotos/cara.jpg\n" +
+		"I2\t../outside.jpg\n" +
+		"R1\tphotos/cara.jpg\n" +
+		"I2\tphotos/none.jpg\n"
+	if err := os.WriteFile(batch, []byte(rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--root", root, "--batch", batch, "-o", out)
+	if code != ExitError || stdout != "" {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+	for _, want := range []string{"line 2: no such record: @I9@", "line 3: path ../outside.jpg is outside --root", "line 4: @R1@ is a REPO record", "line 5: no file photos/none.jpg"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr missing %q:\n%s", want, stderr)
+		}
+	}
+	if strings.Contains(stderr, "line 1:") {
+		t.Errorf("stderr reports the good row:\n%s", stderr)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("output written despite failed rows: %v", err)
+	}
+}
+
+func TestMediaAddUsage(t *testing.T) {
+	file, _ := mediaFixture(t, mediaGED)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	tests := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"no output", []string{file, "--to", "I1", "--path", "a.jpg"}, ExitUsage},
+		{"output is input", []string{file, "--to", "I1", "--path", "a.jpg", "-o", file}, ExitUsage},
+		{"no path", []string{file, "--to", "I1", "-o", out}, ExitUsage},
+		{"batch and to", []string{file, "--batch", "x.tsv", "--to", "I1", "-o", out}, ExitUsage},
+		{"no extension", []string{file, "--to", "I1", "--path", "photos/scan", "-o", out}, ExitError},
+		{"missing batch", []string{file, "--batch", filepath.Join(t.TempDir(), "nope.tsv"), "-o", out}, ExitError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, _, stderr := run(t, append([]string{"media", "add"}, tt.args...)...)
+			if code != tt.want {
+				t.Errorf("exit = %d, want %d (stderr %q)", code, tt.want, stderr)
+			}
+		})
+	}
+	if readFile(t, file) != mediaGED {
+		t.Error("input file changed")
+	}
+}

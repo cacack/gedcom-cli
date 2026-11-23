@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `validate` and `duplicates`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `media`, `validate` and `duplicates`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -166,6 +166,36 @@ In JSON each pair is `{"score", "a", "b"}`, with `a` and `b` in `list indi`'s
 keys. `--min-score` (default `0.7`) drops pairs whose printed score is lower. When the library
 skipped or shortened comparisons (very large surname groups, very long given
 names) a warning on stderr says so, and some pairs may be missing.
+
+`media check` reports whether each `FILE` reference resolves to a file under a
+media folder: `ok`, `missing`, `url` or `absolute` (a rooted path, which is not
+resolved). It exits `1` when any reference is missing. `--unreferenced` also
+lists the files in the folder that nothing references. The media files are
+only looked at, never changed:
+
+```sh
+gedcom media check --root media family.ged
+gedcom media check --root media --unreferenced --format json family.ged
+```
+
+```text
+ok	@O1@	line 812	photos/ada.jpg
+missing	@O2@	line 815	photos/ben.jpg
+url	@I4@	line 97	https://example.com/census.jpg
+unreferenced			photos/cara.jpg
+```
+
+`media add` links a file from an individual, family or source, reusing the
+`OBJE` record with that path or creating one, and writes the result to a new
+file. Running it again changes nothing. `--root` checks that the path names a
+file in the media folder. `--batch` takes a tab-separated file of rows
+(xref, path, optional title) and applies all of them or, if any row fails,
+none:
+
+```sh
+gedcom media add family.ged --to @I1@ --path photos/ada.jpg --title "Ada, 1920" -o out.ged
+gedcom media add family.ged --root media --batch links.tsv -o out.ged
+```
 
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 

@@ -71,7 +71,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().String("format", formatText, `output format: "text" or "json"`)
 	addLivingFlags(root)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
-	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd(), newAncestorsCmd(), newDescendantsCmd(), newValidateCmd(), newDuplicatesCmd())
+	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd(), newAncestorsCmd(), newDescendantsCmd(), newMediaCmd(), newValidateCmd(), newDuplicatesCmd())
 	return root
 }
 
