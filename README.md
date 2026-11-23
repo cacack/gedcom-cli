@@ -156,7 +156,7 @@ gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, 
 
 Xrefs are each file's own, so `@I1@` can be a different person on each side.
 In JSON each pair is `{"score", "a", "b"}`, with `a` and `b` in `list indi`'s
-keys. `--min-score` (default `0.7`) drops weaker pairs. When the library
+keys. `--min-score` (default `0.7`) drops pairs whose printed score is lower. When the library
 skipped or shortened comparisons (very large surname groups, very long given
 names) a warning on stderr says so, and some pairs may be missing.
 

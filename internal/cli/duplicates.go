@@ -18,6 +18,8 @@ type duplicatePair struct {
 	Score float64 `json:"score"`
 	A     indiRow `json:"a"`
 	B     indiRow `json:"b"`
+
+	orderA, orderB int // each individual's position in its file, for sorting
 }
 
 func (p duplicatePair) fields() []string {
@@ -41,7 +43,7 @@ keys.
 
 Pairs are sorted by score, highest first, then by file order in A and in B.
 The score runs from 0 to 1 and is rounded to two decimals; --min-score drops
-pairs below it. The library bounds its work on large surname groups and long
+pairs whose rounded score is below it. The library bounds its work on large surname groups and long
 given names; when it skipped or shortened any comparison, a warning on stderr
 says so, and some pairs may be missing.`,
 		Example: `  gedcom duplicates old-export.ged family.ged
@@ -72,7 +74,7 @@ says so, and some pairs may be missing.`,
 			for _, issue := range report.LimitIssues {
 				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s (%s)\n", oneLine(issue.Message), issue.Code)
 			}
-			pairs := duplicatePairs(a, b, report.Pairs)
+			pairs := duplicatePairs(a, b, report.Pairs, minScore)
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), pairs)
 			}
@@ -88,37 +90,53 @@ says so, and some pairs may be missing.`,
 }
 
 // findDuplicatesBetween runs the library's cross-document duplicate detection
-// with its default configuration and minScore as the confidence threshold.
+// with its default configuration. The library gates on the unrounded score, so
+// it is asked for a little below minScore; duplicatePairs then applies minScore
+// to the rounded score that is printed.
 func findDuplicatesBetween(a, b *gedcom.Document, minScore float64) validator.DuplicateReport {
 	config := validator.DefaultDuplicateConfig()
-	config.MinConfidence = minScore
-	if minScore == 0 {
+	config.MinConfidence = minScore - scoreSlack
+	if config.MinConfidence <= 0 {
 		// The library reads 0 as "use the default"; ZeroThreshold means 0.
 		config.MinConfidence = validator.ZeroThreshold
 	}
 	return validator.NewDuplicateDetector(config).FindDuplicatesBetweenReport(a, b)
 }
 
-// duplicatePairs turns the library's pairs, which come in no particular order,
-// into rows sorted by score and then by file order, so that output is stable.
-// The result is never nil, so that no pairs is [] in JSON.
-func duplicatePairs(a, b *gedcom.Document, found []validator.DuplicatePair) []duplicatePair {
+// scoreSlack is more than the most that rounding to two decimals raises a
+// score, so every pair that rounds up to minScore reaches duplicatePairs.
+const scoreSlack = 0.01
+
+// roundScore is the score as printed: rounded to two decimals.
+func roundScore(confidence float64) float64 { return math.Round(confidence*100) / 100 }
+
+// duplicatePairs keeps the library's pairs whose rounded score is at least
+// minScore and sorts them by that score and then by file order, so that output
+// is stable and agrees with the printed scores. The result is never nil, so
+// that no pairs is [] in JSON.
+func duplicatePairs(a, b *gedcom.Document, found []validator.DuplicatePair, minScore float64) []duplicatePair {
 	orderA, orderB := fileOrder(a), fileOrder(b)
-	slices.SortStableFunc(found, func(x, y validator.DuplicatePair) int {
-		return cmp.Or(
-			cmp.Compare(y.Confidence, x.Confidence),
-			cmp.Compare(orderA[x.Individual1], orderA[y.Individual1]),
-			cmp.Compare(orderB[x.Individual2], orderB[y.Individual2]),
-		)
-	})
 	pairs := make([]duplicatePair, 0, len(found))
 	for _, p := range found {
+		score := roundScore(p.Confidence)
+		if score < minScore {
+			continue
+		}
 		pairs = append(pairs, duplicatePair{
-			Score: math.Round(p.Confidence*100) / 100,
-			A:     indiRowOf(p.Individual1),
-			B:     indiRowOf(p.Individual2),
+			Score:  score,
+			A:      indiRowOf(p.Individual1),
+			B:      indiRowOf(p.Individual2),
+			orderA: orderA[p.Individual1],
+			orderB: orderB[p.Individual2],
 		})
 	}
+	slices.SortStableFunc(pairs, func(x, y duplicatePair) int {
+		return cmp.Or(
+			cmp.Compare(y.Score, x.Score),
+			cmp.Compare(x.orderA, y.orderA),
+			cmp.Compare(x.orderB, y.orderB),
+		)
+	})
 	return pairs
 }
 

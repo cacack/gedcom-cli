@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -55,11 +56,11 @@ func TestDuplicatesJSON(t *testing.T) {
 func TestDuplicatesMinScore(t *testing.T) {
 	tests := []struct {
 		minScore string
-		pairs    int
+		want     []string // "score a-xref b-xref" per pair, in output order
 	}{
-		{"0", 3},
-		{"0.8", 2},
-		{"0.95", 0},
+		{"0", []string{"0.9 @I1@ @I2@", "0.9 @I2@ @I1@", "0.7 @I3@ @I3@"}}, // the library's ZeroThreshold path
+		{"0.8", []string{"0.9 @I1@ @I2@", "0.9 @I2@ @I1@"}},
+		{"0.95", []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.minScore, func(t *testing.T) {
@@ -71,10 +72,38 @@ func TestDuplicatesMinScore(t *testing.T) {
 			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 				t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 			}
-			if got == nil || len(got) != tt.pairs {
-				t.Errorf("got %d pairs (%s), want %d", len(got), stdout, tt.pairs)
+			if got == nil {
+				t.Fatalf("stdout = %s, want an array", stdout)
+			}
+			summary := []string{}
+			for _, p := range got {
+				summary = append(summary, strconv.FormatFloat(p.Score, 'g', -1, 64)+" "+p.A.XRef+" "+p.B.XRef)
+			}
+			if !reflect.DeepEqual(summary, tt.want) {
+				t.Errorf("pairs = %q, want %q", summary, tt.want)
 			}
 		})
+	}
+}
+
+// TestDuplicatesMinScoreRounded checks that --min-score applies to the printed
+// score. Exact names, the same sex and birth years one apart sum to a raw
+// score just under 0.8 that prints as 0.80.
+func TestDuplicatesMinScoreRounded(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.ged"), filepath.Join(dir, "b.ged")
+	for path, year := range map[string]string{a: "1900", b: "1901"} {
+		ged := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME Ezra /Example/\n1 SEX M\n1 BIRT\n2 DATE " + year + "\n0 TRLR\n"
+		if err := os.WriteFile(path, []byte(ged), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, stdout, stderr := run(t, "duplicates", "--min-score", "0.8", a, b)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "0.80\t@I1@\t") {
+		t.Errorf("stdout = %q, want the 0.80 pair", stdout)
 	}
 }
 
@@ -89,6 +118,7 @@ func TestDuplicatesNoPairsText(t *testing.T) {
 // comparisons reaches stderr while the pairs still reach stdout.
 func TestDuplicatesLimitWarning(t *testing.T) {
 	dir := t.TempDir()
+	// 90 runes is past validator.DefaultMaxNameRunes, so the comparison is shortened.
 	long := strings.Repeat("Longgiven", 10)
 	ged := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME " + long + " /Example/\n0 TRLR\n"
 	a, b := filepath.Join(dir, "a.ged"), filepath.Join(dir, "b.ged")
