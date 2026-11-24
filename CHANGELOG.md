@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/cacack/gedcom-cli/compare/v0.4.0...v0.5.0) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **combine:** --strategy prefix now renames every record of each file after the first, not only colliding xrefs. Use --strategy renumber to rename only collisions.
+
+### Features
+
+* **combine:** prefix every record of a later file ([4ad296e](https://github.com/cacack/gedcom-cli/commit/4ad296ea133a3160596c147f59c13e5ac3990d93))
+
+
+### Bug Fixes
+
+* **combine:** keep CHIL order when zipping extracts ([23aa542](https://github.com/cacack/gedcom-cli/commit/23aa54204f69dd4c93985c8299cb078e93aef9a7))
+* route media add and convert through the shared output path ([58979e7](https://github.com/cacack/gedcom-cli/commit/58979e71d46b88491e33e08c486ca99dae3c0719))
+
 ## [0.4.0](https://github.com/cacack/gedcom-cli/compare/v0.3.0...v0.4.0) (2026-11-24)
 
 
