@@ -1,11 +1,10 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
@@ -111,7 +110,10 @@ one UTF-8 file, combine writes it back exactly as it was read.
 				return err
 			}
 			flags := cmd.Flags()
-			out, _ := flags.GetString("output")
+			out, err := outputPath(cmd, args...)
+			if err != nil {
+				return err
+			}
 			name, _ := flags.GetString("strategy")
 			prefixes, _ := flags.GetStringSlice("prefix")
 			living, err := readLivingOptions(cmd)
@@ -122,19 +124,11 @@ one UTF-8 file, combine writes it back exactly as it was read.
 			switch {
 			case !ok:
 				return usageError{fmt.Errorf(`invalid --strategy %q: want "zip", "prefix" or "renumber"`, name)}
-			case out == "":
-				return usageError{errors.New("--output is required")}
 			case strategy == merge.PrefixDoc2 && len(prefixes) != len(args)-1:
 				return usageError{fmt.Errorf("--strategy prefix needs one --prefix per file after the first: got %d, want %d", len(prefixes), len(args)-1)}
 			case strategy != merge.PrefixDoc2 && len(prefixes) > 0:
 				return usageError{errors.New("--prefix needs --strategy prefix")}
 			}
-			for _, in := range args {
-				if err := checkNotInput(in, out); err != nil {
-					return err
-				}
-			}
-
 			docs := make([]*gedcom.Document, len(args))
 			for i, in := range args {
 				res, err := decodeForWrite(in)
@@ -149,37 +143,33 @@ one UTF-8 file, combine writes it back exactly as it was read.
 			}
 			report.Strategy = name
 			if len(report.Conflicts) > 0 {
-				if err := printCombineReport(cmd, format, report); err != nil {
+				if err := printCombineReport(reportWriter(cmd, out), format, report); err != nil {
 					return err
 				}
 				xrefs := make([]string, len(report.Conflicts))
 				for i, c := range report.Conflicts {
 					xrefs[i] = c.XRef
 				}
-				return fmt.Errorf("%s conflict, nothing written: %s", pluralize(len(xrefs), "record", "records"), strings.Join(xrefs, ", "))
+				return fmt.Errorf("%s conflict, nothing written: %s", plural(len(xrefs), "record", "records"), strings.Join(xrefs, ", "))
 			}
 
 			if living.redact {
 				redactDocument(hiddenRecords(doc, presumedLiving(doc, living.cfg)))
 			}
-			var buf bytes.Buffer
-			if err := encodeDocument(&buf, doc); err != nil {
-				return err
-			}
-			if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
+			if err := writeOutput(cmd, out, doc); err != nil {
 				return err
 			}
 			if n := droppedHeaderValues(report.HeaderConflicts); n > 0 && format != formatJSON {
-				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s from later files dropped (see --format json)\n", pluralize(n, "differing header value", "differing header values"))
+				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s from later files dropped (see --format json)\n", plural(n, "differing header value", "differing header values"))
 			}
 			report.Output = out
 			report.Records = len(doc.Records)
 			report.Individuals = len(doc.Individuals())
 			report.Families = len(doc.Families())
-			return printCombineReport(cmd, format, report)
+			return printCombineReport(reportWriter(cmd, out), format, report)
 		},
 	}
-	cmd.Flags().StringP("output", "o", "", "file to write the result to (required; never an input)")
+	addOutputFlag(cmd)
 	cmd.Flags().String("strategy", "", `how to join records the files share: "zip", "prefix" or "renumber" (required)`)
 	cmd.Flags().StringSlice("prefix", nil, "with --strategy prefix, the prefix for each file after the first, comma-separated or repeated")
 	return cmd
@@ -236,8 +226,7 @@ func combineDocuments(files []string, docs []*gedcom.Document, strategy merge.Co
 // printCombineReport writes the report: as JSON, or as a summary line (or, on
 // a conflict, none) followed by one tab-separated line per renamed xref (file,
 // old, new) or per conflict (file, xref, "conflict", reason).
-func printCombineReport(cmd *cobra.Command, format string, report combineReport) error {
-	w := cmd.OutOrStdout()
+func printCombineReport(w io.Writer, format string, report combineReport) error {
 	if format == formatJSON {
 		return writeJSON(w, report)
 	}
@@ -250,8 +239,8 @@ func printCombineReport(cmd *cobra.Command, format string, report combineReport)
 		return nil
 	}
 	if _, err := fmt.Fprintf(w, "wrote %s: %s, %s, %s\n", report.Output,
-		pluralize(report.Records, "record", "records"), pluralize(report.Individuals, "individual", "individuals"),
-		pluralize(report.Families, "family", "families")); err != nil {
+		plural(report.Records, "record", "records"), plural(report.Individuals, "individual", "individuals"),
+		plural(report.Families, "family", "families")); err != nil {
 		return err
 	}
 	for _, in := range report.Inputs {
@@ -275,12 +264,4 @@ func droppedHeaderValues(conflicts []combineHeaderConflict) int {
 		}
 	}
 	return n
-}
-
-// pluralize is n with the noun that fits it.
-func pluralize(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }

@@ -351,7 +351,7 @@ func TestCombineErrors(t *testing.T) {
 		{"no files", []string{"combine", "--strategy", "zip", "-o", out}, ExitUsage, "requires at least 1 arg"},
 		{"no strategy", []string{"combine", sample, sample, "-o", out}, ExitUsage, `invalid --strategy ""`},
 		{"bad strategy", []string{"combine", "--strategy", "merge", sample, sample, "-o", out}, ExitUsage, `invalid --strategy "merge"`},
-		{"no output", []string{"combine", "--strategy", "zip", sample, sample}, ExitUsage, "--output is required"},
+		{"no output", []string{"combine", "--strategy", "zip", sample, sample}, ExitUsage, "--output (-o) is required"},
 		{"output is input", []string{"combine", "--strategy", "zip", sample, input, "-o", input}, ExitUsage, "is the input file"},
 		{"no prefix", []string{"combine", "--strategy", "prefix", sample, sample, "-o", out}, ExitUsage, "got 0, want 1"},
 		{"too many prefixes", []string{"combine", "--strategy", "prefix", "--prefix", "B_,C_", sample, sample, "-o", out}, ExitUsage, "got 2, want 1"},
@@ -380,5 +380,21 @@ func TestCombineHelp(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}
+	}
+}
+
+// TestCombineToStdout checks that -o - writes the combined file to stdout and
+// the report to stderr, as the other write commands do.
+func TestCombineToStdout(t *testing.T) {
+	in := writeTemp(t, "one.ged", conflicting)
+	code, stdout, stderr := run(t, "combine", "--strategy", "zip", in, "-o", "-")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "0 HEAD") || !strings.Contains(stdout, "0 TRLR") {
+		t.Errorf("stdout is not a GEDCOM file:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "wrote") {
+		t.Errorf("the report is not on stderr: %q", stderr)
 	}
 }
