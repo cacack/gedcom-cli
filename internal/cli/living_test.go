@@ -116,6 +116,8 @@ func TestRedactLiving(t *testing.T) {
 		{"diff living in old only", []string{"diff", living, "testdata/living-died.ged"}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", annDeathHunk}},
 		{"diff living in new only", []string{"diff", "testdata/living-died.ged", living}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", "  in INDI > DEAT\n  - line 17: 2 DATE 9 OCT 1978\n"}},
 		{"validate json", []string{"validate", "--format", "json", "--min-severity", "info", living}, ExitError, []string{`"code": "INVALID_DATE"`, `"message": "Living"`}},
+		// TestCombineRedactLiving checks the file written.
+		{"combine", []string{"combine", "--strategy", "zip", living, living, "-o", filepath.Join(t.TempDir(), "out.ged")}, ExitOK, []string{"5 individuals"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

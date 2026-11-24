@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families` and `diff`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -411,6 +411,38 @@ neighbor. `candidate` lists families the kept person is now a spouse in with
 the same partner: candidates for `merge-families`, which `merge-people` does
 not merge. Run `validate` on the result.
 
+`combine` joins files into one, in the order given, and writes it to a new
+file. No people are merged. `--strategy` says what to do with an xref two
+files share:
+
+- `zip`: the files were cut from one master by `extract`, so a shared xref is
+  the same record. Its copies are joined, putting back the pointers to people
+  and families each file dropped at its boundary. Copies that differ in
+  anything else conflict: each conflicting xref is listed, the command exits
+  1, and nothing is written. The output holds the master's records, though
+  not always in its order: records follow the first file that holds them, and
+  a family split between files gets its `HUSB`, `WIFE` and `CHIL` lines back
+  in one file's order.
+- `prefix`: unrelated trees. A later file's colliding xrefs get that file's
+  `--prefix` (one per file after the first), so each record's origin stays in
+  its xref.
+- `renumber`: as `prefix`, with the next free number instead.
+
+```sh
+gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
+gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
+```
+
+```text
+wrote both.ged: 412 records, 260 individuals, 98 families
+cousin.ged	@F1@	@C_F1@
+cousin.ged	@I1@	@C_I1@
+```
+
+Each renamed xref is a line (file, old, new); `--format json` gives the same
+as a `remapped` map per input. The files must share a GEDCOM version; they may
+declare different encodings, and the output is UTF-8.
+
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 ## Conventions
@@ -424,7 +456,8 @@ These hold for every command, so scripts and agents can rely on them:
   stderr then holds only that JSON report.
 - **`--format json`** gives machine-readable output; the default is text.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
-  error) or `validate` found errors, `2` the command line was wrong.
+  error), `validate` found errors or `combine` found conflicts, `2` the command
+  line was wrong.
 - **Input files are never modified.** A command that writes a file takes it
   as `-o`, which may not name an input, and replaces an existing file only
   once the whole output is written, keeping that file's permissions.
