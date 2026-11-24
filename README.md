@@ -229,8 +229,9 @@ gedcom media add family.ged --root media --batch links.tsv -o out.ged
 `extract` writes a branch of the tree to its own file: the individuals given,
 every family one of them is a member of, and the sources, notes, media,
 repositories and submitters those records cite. Other individuals are not
-pulled in. `-` reads xrefs from stdin, so it takes what `ancestors`,
-`descendants` and `list | jq` print:
+pulled in. `-` reads xrefs from stdin, one word each, so feed it the `xref`
+column of `ancestors`, `descendants` or `list` JSON through `jq` (their text
+output carries names too):
 
 ```sh
 gedcom extract tree.ged @I1@ @I2@ -o couple.ged
@@ -251,9 +252,10 @@ restorable when combining the file with another cut from the same master that
 holds the target is sure to put it back. Records keep their xrefs and every
 kept line is written as it was read. The output carries the input's header and
 submitter, contact details included, unless `--strip-submitter` replaces each
-submitter record with one named `Submitter`. `--redact-living` applies to the
-file written. `-o` may not name the input; `-o -` writes the GEDCOM to stdout
-and the report to stderr.
+submitter record with one named `Submitter`; the header itself is copied as
+read even then, so check its source and corporation lines before sharing.
+`--redact-living` applies to the file written. `-o` may not name the input;
+`-o -` writes the GEDCOM to stdout and the report to stderr.
 
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
@@ -263,13 +265,15 @@ These hold for every command, so scripts and agents can rely on them:
 
 - **Results go to stdout, diagnostics to stderr.** Stderr is empty on
   success, except for a warning that a result is incomplete (`duplicates`)
-  or that a pointer was dropped (`extract`).
+  or that a pointer was dropped (`extract`). A write command given `-o -`
+  puts the file on stdout and its report on stderr; with `--format json`
+  stderr then holds only that JSON report.
 - **`--format json`** gives machine-readable output; the default is text.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error) or `validate` found errors, `2` the command line was wrong.
 - **Input files are never modified.** A command that writes a file takes it
   as `-o`, which may not name an input, and replaces an existing file only
-  once the whole output is written.
+  once the whole output is written, keeping that file's permissions.
 - **`--redact-living`** replaces what the output says about a person presumed
   living with `Living`: name, dates, places, notes, addresses, and in `get`
   their raw lines. The xref, sex and family links stay, so the structure is

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 
@@ -102,9 +104,15 @@ func writeOutput(cmd *cobra.Command, out string, doc *gedcom.Document) error {
 
 // writeFileAtomic writes path through a temporary file in the same directory,
 // renamed over path only once write and the sync succeed, so a failure leaves
-// no partial file and an existing file at path untouched.
+// no partial file and an existing file at path untouched. The file replaced
+// keeps its permissions; a new file gets 0666 less the umask, as os.Create
+// would give it.
 func writeFileAtomic(path string, write func(io.Writer) error) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	perm, keep := os.FileMode(0o666), false
+	if info, statErr := os.Stat(path); statErr == nil {
+		perm, keep = info.Mode().Perm(), true
+	}
+	tmp, err := createTemp(path, perm)
 	if err != nil {
 		return err
 	}
@@ -117,8 +125,11 @@ func writeFileAtomic(path string, write func(io.Writer) error) (err error) {
 	if err = write(tmp); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err = tmp.Chmod(0o644); err != nil {
-		return err
+	if keep {
+		// The umask applied at create; the replaced file's mode is restored.
+		if err = tmp.Chmod(perm); err != nil {
+			return err
+		}
 	}
 	if err = tmp.Sync(); err != nil {
 		return err
@@ -129,10 +140,24 @@ func writeFileAtomic(path string, write func(io.Writer) error) (err error) {
 	return os.Rename(tmp.Name(), path)
 }
 
-// plural is n with noun, pluralized with an s unless n is 1.
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
+// createTemp creates a new file beside path with mode perm less the umask.
+// os.CreateTemp is not used because it always creates the file 0600.
+func createTemp(path string, perm os.FileMode) (*os.File, error) {
+	dir, base := filepath.Split(path)
+	for range 100 {
+		name := filepath.Join(dir, fmt.Sprintf(".%s.%d.tmp", base, rand.Uint32()))
+		f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
+		if !errors.Is(err, fs.ErrExist) {
+			return f, err
+		}
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return nil, fmt.Errorf("create a temporary file beside %s: too many attempts", path)
+}
+
+// plural is n with one when n is 1, otherwise with many.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

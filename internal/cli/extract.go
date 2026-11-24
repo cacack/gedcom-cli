@@ -54,12 +54,15 @@ self-contained GEDCOM file. This is gedcom-go's bounded subset: other
 individuals are not pulled in, however they are related.
 
 An xref may be given without its @ delimiters. "-" reads more xrefs from
-stdin, separated by spaces or newlines, so extract takes the xrefs that
-'gedcom ancestors', 'gedcom descendants' or 'gedcom list' print.
+stdin, separated by spaces or newlines. Every word read is taken as an xref,
+so feed it the xref column only, such as the JSON output of 'gedcom ancestors',
+'gedcom descendants' or 'gedcom list ... indi' through jq -r '.[].xref'; their
+text output carries names and flags too.
 
 A pointer in an included record to an individual or family left out, such as
 a family's CHIL for a child not extracted, is removed, so the output has no
-dangling pointers. Each one is listed on stderr as a warning and in the
+dangling pointers. Each one is listed on stderr as a warning (except with
+"-o -" and --format json, when stderr holds only the JSON report) and in the
 report's "dropped" list, with whether combining the file with one cut from the
 same master that holds the target is guaranteed to put it back (restorable).
 A pointer in an included record that resolves to nothing stops the extract
@@ -69,6 +72,8 @@ Records keep their xrefs, and every line that is kept is written as it was
 read. The header is the input's, so the output names the same submitter, and
 carries the submitter's name, address, phone and email, unless
 --strip-submitter replaces each submitter record with one named ` + submitterValue + `.
+The header itself is copied unchanged, even with --strip-submitter: check its
+source and corporation lines before sharing the file.
 --redact-living applies to the output file, not only to the report.
 
 -o is required and may not name the input file; "-o -" writes the GEDCOM to
@@ -126,28 +131,29 @@ once the whole file is written.`,
 			// does. A Layout is safe to share: the encoder writes a source
 			// line only where the record still reads as it.
 			branch.Layout = doc.Layout
-			report := newExtractReport(out, branch, dropped)
-			for _, d := range report.Dropped {
-				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: dropped pointer %s\n", d)
-			}
 			if err := writeOutput(cmd, out, branch); err != nil {
 				return err
+			}
+			report := newExtractReport(out, branch, dropped)
+			// With -o - and JSON the report goes to stderr, and its dropped
+			// list stands in for the warnings so stderr is one JSON document.
+			if out != stdio || format != formatJSON {
+				for _, d := range report.Dropped {
+					fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: dropped pointer %s\n", d)
+				}
 			}
 			w := reportWriter(cmd, out)
 			if format == formatJSON {
 				return writeJSON(w, report)
 			}
-			families := plural(report.Families, "family")
-			if report.Families != 1 {
-				families = fmt.Sprintf("%d families", report.Families)
-			}
-			_, err = fmt.Fprintf(w, "wrote %s: %s, %s, %s, %s dropped\n", outputName(out), plural(report.Records, "record"),
-				plural(report.Individuals, "individual"), families, plural(len(report.Dropped), "pointer"))
+			_, err = fmt.Fprintf(w, "wrote %s: %s, %s, %s, %s dropped\n", outputName(out),
+				plural(report.Records, "record", "records"), plural(report.Individuals, "individual", "individuals"),
+				plural(report.Families, "family", "families"), plural(len(report.Dropped), "pointer", "pointers"))
 			return err
 		},
 	}
 	addOutputFlag(cmd)
-	cmd.Flags().Bool("strip-submitter", false, "replace each submitter record with one named "+submitterValue+", dropping its address, phone, email and notes")
+	cmd.Flags().Bool("strip-submitter", false, "replace each submitter record with one named "+submitterValue+", dropping its address, phone, email and notes (the header is kept as read)")
 	return cmd
 }
 

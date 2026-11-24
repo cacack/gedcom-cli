@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -145,6 +146,56 @@ func TestExtractStdin(t *testing.T) {
 	}
 }
 
+// With "-o -" and --format json, stderr holds only the JSON report: its
+// dropped list stands in for the warning lines.
+func TestExtractStdoutJSON(t *testing.T) {
+	code, stdout, stderr := run(t, "extract", "--format", "json", extractFixture, "I1", "I5", "-o", "-")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if stdout != extractWant {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, extractWant)
+	}
+	var got extractReport
+	if err := json.Unmarshal([]byte(stderr), &got); err != nil {
+		t.Fatalf("stderr is not one JSON document: %v\n%s", err, stderr)
+	}
+	if got.Output != "stdout" || len(got.Dropped) != 3 {
+		t.Errorf("report = %+v", got)
+	}
+}
+
+// An output file replaced keeps its permissions; a new one is not left 0600.
+func TestExtractOutputMode(t *testing.T) {
+	dir := t.TempDir()
+	kept := filepath.Join(dir, "kept.ged")
+	if err := os.WriteFile(kept, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(kept, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(dir, "fresh.ged")
+	for _, out := range []string{kept, fresh} {
+		if code, _, stderr := run(t, "extract", extractFixture, "I1", "-o", out); code != ExitOK {
+			t.Fatalf("%s: exit = %d, stderr = %q", out, code, stderr)
+		}
+	}
+	if info, err := os.Stat(kept); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("replaced file mode = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	probe := filepath.Join(dir, "probe")
+	f, err := os.Create(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	want, _ := os.Stat(probe)
+	if info, err := os.Stat(fresh); err != nil || info.Mode().Perm() != want.Mode().Perm() {
+		t.Errorf("new file mode = %v, %v; want %v as os.Create gives", info.Mode().Perm(), err, want.Mode().Perm())
+	}
+}
+
 func TestExtractStripSubmitter(t *testing.T) {
 	contact := []string{"Test Submitter", "Example Street", "555-0100", "submitter@example.com"}
 	for _, strip := range []bool{false, true} {
@@ -262,10 +313,12 @@ func fileText(t *testing.T, path string) string {
 // in the file, cut into a file of its own.
 func extractEveryone(in, out string) []string {
 	args := []string{"extract", in}
-	if res, err := decodeForWrite(in); err == nil {
-		for _, ind := range res.Document.Individuals() {
-			args = append(args, ind.XRef)
-		}
+	res, err := decodeForWrite(in)
+	if err != nil {
+		panic(fmt.Sprintf("extractEveryone: %v", err))
+	}
+	for _, ind := range res.Document.Individuals() {
+		args = append(args, ind.XRef)
 	}
 	return append(args, "-o", out)
 }
