@@ -516,6 +516,10 @@ make check   # vet, test, gofmt: what CI runs
 make build   # ./bin/gedcom
 ```
 
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rules for adding a command, the
+map from each contract to its code and test, and how to develop against a
+local gedcom-go.
+
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are cut by release-please from the commits on `main`: `feat` and `fix`
 (including Dependabot's `fix(deps)`) and `perf` open or update a release PR,

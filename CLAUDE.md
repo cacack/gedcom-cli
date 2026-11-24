@@ -2,15 +2,9 @@
 
 `gedcom` CLI: a thin wrapper over the `github.com/cacack/gedcom-go/v3` library, for people and coding agents alike. Direction, principles and non-goals are in [CONSTITUTION.md](CONSTITUTION.md); read it before proposing a command.
 
+The rules for adding or changing a command are in [CONTRIBUTING.md](CONTRIBUTING.md): layout, the contract → code → enforcing-test map, and developing against a local gedcom-go. Read it before touching `internal/cli/`; don't restate it here.
+
 - **No GEDCOM logic here.** Commands wrap library calls. A missing capability or a library bug is an issue on `cacack/gedcom-go`, not a workaround in this repo.
-- **The library is consumed as a released version** in `go.mod`. To develop against a local checkout, use a `go.work` (gitignored); never commit a `replace`.
-- **Layout:** `cmd/gedcom/main.go` only calls `cli.Run`. Each command is one file in `internal/cli/`, registered in `newRootCmd`.
-- **Output contract** (README "Conventions"): results on stdout, diagnostics on stderr, `--format json` on every command, exit codes `ExitOK`/`ExitError`/`ExitUsage`. Return `usageError` for invocation mistakes.
-- **Every command needs** an `Example` in its help (agents learn the tool from `--help`) and tests through `Run` covering text, JSON and exit codes.
-- **Every command honors `--redact-living`** (README "Conventions"): decode through `openDocument` (`living.go`), or, for a command that must see the whole file (`validate`) or writes one, redact its results with `hiddenRecords`. Add the command to `TestRedactLiving`.
-- **Never write to an input file.** Commands that change data write a new file.
-- **Write commands keep the layout.** Decode with `decodeForWrite`, encode with `encodeDocument` (`write.go`), and add the command to `writeCommands` in `roundtrip_test.go`: with no change requested its output must be byte-identical (CONSTITUTION.md C2).
-- Test data must be synthetic: no real people.
 
 **Releases:** release-please cuts them from conventional commits on `main`; only `feat`, `fix` and `perf` produce one (README "Development"). Never tag or edit `CHANGELOG.md` by hand. Put issue references (`Closes #N`, `Refs #N`) in the PR description, never in a commit message: release-please turns a commit's reference into "closes", and the release PR then closes the issue. PR titles are plain prose, never conventional commits (CI checks): the merge commit copies the title, and release-please would count it twice.
 
