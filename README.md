@@ -507,14 +507,18 @@ These hold for every command, so scripts and agents can rely on them:
   once the whole output is written, keeping that file's permissions.
 - **`--redact-living`** replaces what the output says about a person presumed
   living with `Living`: name, dates, places, notes, addresses, and in `get`
-  and the merge reports their raw lines (a file a command writes is not
-  redacted). The xref, sex and family links stay, so the structure is
-  still readable. A family with a living spouse keeps only its spouses and
-  children, and a note record a hidden person or family points to reads
-  `Living`. `validate` still checks the whole file; a finding about a hidden
-  record reads `Living` instead of its message, and `diff` lists a changed
-  hidden record with its lines replaced by `Living`. Source, media, repository and
-  submitter records are not redacted, even when a hidden record cites them:
+  and the merge reports their raw lines. The xref, sex and family links stay,
+  so the structure is still readable. A family with a living spouse keeps
+  only its spouses and children, and a note record a hidden person or family
+  points to reads `Living`. `validate` and `convert` still check the whole
+  file; a finding about a hidden record reads `Living` instead of its message,
+  and `diff` lists a changed hidden record with its lines replaced by
+  `Living`. A command that writes a file always redacts its report, but only
+  `extract` and `combine`, which make a new file to share, redact the file
+  too: `put`, `delete`, `media add`, `merge-people`, `merge-families` and
+  `convert` edit or rewrite the whole tree and write it unredacted. Source,
+  media, repository and submitter records are not redacted, even when a
+  hidden record cites them:
   check their titles, file names and addresses yourself. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or
