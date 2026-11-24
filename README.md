@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `media`, `validate` and `duplicates`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate` and `duplicates`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -113,6 +113,34 @@ gedcom ancestors --format json family.ged @I1@ | jq '.[] | select(.generation ==
 Rows are in generation order, then in gedcom-go's order. A person reached by
 more than one path (pedigree collapse) is listed once, at the generation of the
 shortest path.
+
+`relatives` prints a person and their immediate family, one per line: the
+person (`self`), then parents, siblings (`half-sibling` for a child of a
+parent's other family), spouses and children. Each line gives the
+relationship, the family it comes through, the person in `list indi`'s fields,
+and the child's pedigree (`PEDI`) in that family where the file gives one, so
+birth and adoptive parents, or two marriages, show separately:
+
+```sh
+gedcom relatives family.ged I1
+gedcom relatives --format json family.ged I1 | jq '.relatives[] | select(.relationship == "child")'
+```
+
+```text
+self		@I1@	Ann /Example/	4 APR 1920	1 JAN 1990
+parent	@F1@	@I2@	Bert /Example/	1890		birth
+parent	@F2@	@I5@	Earl /Placeholder/			adopted
+half-sibling	@F5@	@I8@	Hal /Example/	1930
+spouse	@F3@	@I9@	Ivan /Sample/
+child	@F3@	@I10@	Jill /Sample/	1945		birth
+```
+
+`pedigree` is always the child's end of the link: the person's own for a
+parent, the relative's for a sibling or child.
+
+`--format json` prints one object: `person`, with `list indi`'s keys, and
+`relatives` (which does not repeat the person), each with those keys plus
+`relationship`, `family` and `pedigree`.
 
 `validate` reports what the decoder could not read cleanly (`decode`) and what
 gedcom-go's validator finds in the records (`validate`), grouped by severity
