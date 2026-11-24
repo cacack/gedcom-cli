@@ -35,6 +35,7 @@ var writeCommands = map[string]func(in, out string) []string{
 		}
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
+	"extract": extractEveryone,
 }
 
 // TestRoundTripByteIdentical settles CONSTITUTION.md C2: decoding and

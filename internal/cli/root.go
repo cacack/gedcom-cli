@@ -36,8 +36,17 @@ func (e usageError) Error() string { return e.err.Error() }
 // Run executes the gedcom command with args (without the program name) and
 // returns the process exit code. Results go to stdout, diagnostics to stderr.
 func Run(args []string, stdout, stderr io.Writer) int {
+	return runWithStdin(args, nil, stdout, stderr)
+}
+
+// runWithStdin is Run reading stdin from stdin, or from os.Stdin when it is
+// nil.
+func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root := newRootCmd()
 	root.SetArgs(args)
+	if stdin != nil {
+		root.SetIn(stdin)
+	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 
@@ -71,7 +80,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().String("format", formatText, `output format: "text" or "json"`)
 	addLivingFlags(root)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
-	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd(), newAncestorsCmd(), newDescendantsCmd(), newRelativesCmd(), newMediaCmd(), newValidateCmd(), newDuplicatesCmd())
+	root.AddCommand(newInfoCmd(), newGetCmd(), newListCmd(), newAncestorsCmd(), newDescendantsCmd(), newRelativesCmd(), newMediaCmd(), newValidateCmd(), newDuplicatesCmd(), newExtractCmd())
 	return root
 }
 
