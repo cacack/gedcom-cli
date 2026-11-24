@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/cacack/gedcom-cli/compare/v0.3.0...v0.4.0) (2026-11-24)
+
+
+### Features
+
+* list the distinct places in a file ([317a23e](https://github.com/cacack/gedcom-cli/commit/317a23eb6880ff269365708684862cf6370f2ef6))
+
+
+### Bug Fixes
+
+* report an empty FILE as empty in media check ([b95ef08](https://github.com/cacack/gedcom-cli/commit/b95ef08399b99b315f2c12787ee1087e56d4b68f))
+
 ## [0.3.0](https://github.com/cacack/gedcom-cli/compare/v0.2.0...v0.3.0) (2026-11-24)
 
 
