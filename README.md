@@ -225,7 +225,11 @@ export. `--ignore-tag TAG` (repeatable) leaves a tag out wherever it appears,
 for vendor tokens that change between exports of an unchanged tree. Finding
 differences is not a failure: `diff` exits `0` either way, and prints
 `no differences` when there are none. In JSON, `added`, `removed` and
-`changed` are arrays and `header` is `null` unless compared and different.
+`changed` are arrays and `header` is `null` unless compared and different. A
+change's `path` is the tags below the record, without its type (`["BIRT"]` is
+`in INDI > BIRT`; `[]` is the record's own lines). The header has no xref: its
+text row is `changed`, an empty field, then `HEAD`, and its JSON `xref` is
+`""`.
 
 `media check` reports whether each `FILE` reference resolves to a file under a
 media folder: `ok`, `missing`, `url`, `absolute` (a rooted path) or `outside`

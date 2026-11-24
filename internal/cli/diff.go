@@ -91,8 +91,10 @@ whole structures with every line under them. Files with no difference print
 "no differences".
 
 --format json prints one object with old, new, added, removed, changed and
-header (null when not compared or equal); each change has path, removed and
-added, and each line has line and text.
+header (null when not compared or equal; its xref is ""). Each change has
+path, removed and added, and each line has line and text. path is the tags
+below the record, without its type: ["BIRT"] is printed "in INDI > BIRT", and
+[] is the record's own lines.
 
 Differences are not a failure: diff exits 0 whether or not it finds any. With
 --redact-living, a changed record that is hidden in either file is listed with

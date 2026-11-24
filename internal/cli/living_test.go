@@ -81,6 +81,10 @@ func TestListLiving(t *testing.T) {
 	}
 }
 
+// annDeathHunk is diff's text for the one change to a record that is not
+// hidden, which --redact-living must still print.
+const annDeathHunk = "changed\t@I1@\tINDI\n  in INDI > DEAT\n  - line 17: 2 DATE 9 OCT 1979\n  + line 17: 2 DATE 9 OCT 1978\n"
+
 // TestRedactLiving runs every command with --redact-living. Add each new
 // command here.
 func TestRedactLiving(t *testing.T) {
@@ -104,9 +108,13 @@ func TestRedactLiving(t *testing.T) {
 		{"merge-people", []string{"merge-people", living, "@I3@", "@I5@", "-o", out}, ExitOK, []string{"conflict\tBIRT\tLiving", "repointed\t@F2@\tFAM.CHIL"}},
 		{"merge-people json", []string{"merge-people", "--format", "json", living, "@I1@", "@I3@", "-o", out}, ExitOK, []string{"\"lines\": [\n        \"Living\""}},
 		{"merge-families", []string{"merge-families", living, "@F1@", "@F2@", "-o", out}, ExitOK, []string{"conflict\tMARR\tLiving", "repointed\t@I5@\tINDI.FAMC"}},
-		// living-changed.ged changes Ann's death date and Cleo's birthplace.
-		{"diff", []string{"diff", living, "testdata/living-changed.ged"}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", "9 OCT 1978"}},
-		{"diff json", []string{"diff", "--format", "json", living, "testdata/living-changed.ged"}, ExitOK, []string{`"redacted": true`, "9 OCT 1978"}},
+		// living-changed.ged changes Ann's (@I1@) death date and Cleo's (@I3@)
+		// birthplace; living-died.ged also gives Cleo a death, so she is living
+		// in one file only and must still be hidden whichever side that is.
+		{"diff", []string{"diff", living, "testdata/living-changed.ged"}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", annDeathHunk}},
+		{"diff json", []string{"diff", "--format", "json", living, "testdata/living-changed.ged"}, ExitOK, []string{`"redacted": true`, `"redacted": false`, "9 OCT 1978"}},
+		{"diff living in old only", []string{"diff", living, "testdata/living-died.ged"}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", annDeathHunk}},
+		{"diff living in new only", []string{"diff", "testdata/living-died.ged", living}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", "  in INDI > DEAT\n  - line 17: 2 DATE 9 OCT 1978\n"}},
 		{"validate json", []string{"validate", "--format", "json", "--min-severity", "info", living}, ExitError, []string{`"code": "INVALID_DATE"`, `"message": "Living"`}},
 	}
 	for _, tt := range tests {
