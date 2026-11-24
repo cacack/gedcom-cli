@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/cacack/gedcom-cli/compare/v0.6.0...v0.7.0) (2026-11-24)
+
+
+### Features
+
+* **duplicates:** add --relatives and state what the score is built from ([f0b403c](https://github.com/cacack/gedcom-cli/commit/f0b403c61bf328a157904f6cbf99c63ce04f14ce))
+* **get:** print the header with HEAD ([813db58](https://github.com/cacack/gedcom-cli/commit/813db583f7335bac79db9af965d2586cf0073ae8))
+* **list:** count tag paths with tags and one path's values with values ([7c56ecb](https://github.com/cacack/gedcom-cli/commit/7c56ecb0e70c16df11caac9ff2ee17151b119587))
+* **merge:** add merge-sources and merge-repositories ([0da3a45](https://github.com/cacack/gedcom-cli/commit/0da3a45c0068082882b72bda0eca80d7f5bb1341))
+* **validate:** report family links the other record does not point back to ([a6013d5](https://github.com/cacack/gedcom-cli/commit/a6013d51299543e5b279b1a4968c459f9145ce89))
+
+
+### Bug Fixes
+
+* **combine:** keep the first file's header alone ([10926b4](https://github.com/cacack/gedcom-cli/commit/10926b41d0a10c96b36df9fdb5b4333792ef38e4))
+* **descendants:** ignore a family link only one side records ([b18285e](https://github.com/cacack/gedcom-cli/commit/b18285e183d031032ea2821175942ac2f4cac25a))
+
 ## [0.6.0](https://github.com/cacack/gedcom-cli/compare/v0.5.0...v0.6.0) (2026-11-24)
 
 
