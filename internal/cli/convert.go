@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -70,7 +69,9 @@ Lines the conversion does not change keep their layout (indentation, line
 terminators, blank lines), so converting a UTF-8 file to the version it already
 has writes it back byte-identical.
 
-The report on stdout starts with what the decoder could not read cleanly in
+With -o -, the result goes to stdout and the report to stderr.
+
+The report starts with what the decoder could not read cleanly in
 the input; a line it could not parse is copied to the output as it was. Then
 comes the library's conversion report, most serious first:
 
@@ -84,7 +85,7 @@ comes the library's conversion report, most serious first:
   validation       problems found in the converted document
 
 With --fail-on-loss, a conversion that would lose data writes no output file
-and exits 1, with the report still on stdout.`,
+and exits 1, with the report still printed.`,
 		Example: `  gedcom convert legacy.ged --to 5.5.1 -o legacy-utf8.ged
   gedcom convert --fail-on-loss legacy.ged --to 7.0 -o legacy-v7.ged
   gedcom convert --format json legacy.ged --to 5.5.1 -o out.ged | jq .dataLoss`,
@@ -95,26 +96,24 @@ and exits 1, with the report still on stdout.`,
 				return err
 			}
 			to, _ := cmd.Flags().GetString("to")
-			out, _ := cmd.Flags().GetString("output")
 			failOnLoss, _ := cmd.Flags().GetBool("fail-on-loss")
 			if !slices.Contains(convertTargets, to) {
 				return usageError{fmt.Errorf("invalid --to %q: want %s", to, strings.Join(convertTargets, " or "))}
 			}
-			if out == "" {
-				return usageError{errors.New("--output (-o) is required")}
-			}
-			if err := checkNotInput(args[0], out); err != nil {
+			out, err := outputPath(cmd, args[0])
+			if err != nil {
 				return err
 			}
 
-			report, convErr := convertFile(args[0], out, gedcom.Version(to), failOnLoss)
+			report, convErr := convertFile(cmd, args[0], out, gedcom.Version(to), failOnLoss)
 			if report == nil {
 				return convErr
 			}
+			w := reportWriter(cmd, out)
 			if format == formatJSON {
-				err = writeJSON(cmd.OutOrStdout(), report)
+				err = writeJSON(w, report)
 			} else {
-				err = writeConvertText(cmd.OutOrStdout(), report)
+				err = writeConvertText(w, report)
 			}
 			if err != nil {
 				return err
@@ -123,7 +122,7 @@ and exits 1, with the report still on stdout.`,
 		},
 	}
 	cmd.Flags().String("to", "", "version to write: 5.5.1 or 7.0 (required)")
-	cmd.Flags().StringP("output", "o", "", "file to write the converted GEDCOM to (required)")
+	addOutputFlag(cmd)
 	cmd.Flags().Bool("fail-on-loss", false, "write nothing and exit 1 if the conversion would lose data")
 	return cmd
 }
@@ -131,7 +130,7 @@ and exits 1, with the report still on stdout.`,
 // convertFile converts the file at in to version to and writes it to out. It
 // returns the report whenever the conversion ran, with an error when data
 // loss stopped it (failOnLoss) or the output could not be written.
-func convertFile(in, out string, to gedcom.Version, failOnLoss bool) (*convertReport, error) {
+func convertFile(cmd *cobra.Command, in, out string, to gedcom.Version, failOnLoss bool) (*convertReport, error) {
 	res, err := decodeForWrite(in)
 	if err != nil {
 		return nil, err
@@ -146,15 +145,13 @@ func convertFile(in, out string, to gedcom.Version, failOnLoss bool) (*convertRe
 	report.Decode = decodeFindings(res.Diagnostics)
 	if errors.Is(err, converter.ErrDataLoss) {
 		return report, fmt.Errorf("conversion of %s to %s would lose data (%s); %s not written",
-			in, to, plural(len(lib.DataLoss), "item", "items"), out)
+			in, to, plural(len(lib.DataLoss), "item", "items"), outputName(out))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("convert %s: %w", in, err)
 	}
 
-	if err := writeFileAtomic(filepath.Clean(out), func(w io.Writer) error {
-		return encodeDocument(w, converted)
-	}); err != nil {
+	if err := writeOutput(cmd, out, converted); err != nil {
 		return nil, err
 	}
 	report.Written = true
@@ -195,9 +192,9 @@ func notes(in []gedcom.ConversionNote) []conversionNote {
 // writeConvertText writes a summary line, then each non-empty section of the
 // report as a heading with a count and one tab-separated line per item.
 func writeConvertText(w io.Writer, r *convertReport) error {
-	status := "wrote " + r.Output
+	status := "wrote " + outputName(r.Output)
 	if !r.Written {
-		status = r.Output + " not written"
+		status = outputName(r.Output) + " not written"
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s -> %s, %s\n", r.Input, versionName(r.SourceVersion), r.TargetVersion, status)

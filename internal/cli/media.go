@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -344,7 +343,8 @@ func newMediaAddCmd() *cobra.Command {
 		Use:   "add <file> (--to <xref> --path <path> | --batch <tsv>) -o <out>",
 		Short: "Link a media file from an individual, family or source, writing a new file",
 		Long: `Attach a media file to an individual, family or source record, and write the
-result to --output. The input file is never changed.
+result to --output, or to stdout with -o - (the report then goes to stderr).
+The input file is never changed.
 
 The file is linked through an OBJE record: the first one with a FILE of that
 path is reused, otherwise a new one is created (FILE, with FORM and TITL
@@ -377,7 +377,6 @@ Records not involved are written exactly as they were read.`,
 				return err
 			}
 			flags := cmd.Flags()
-			out, _ := flags.GetString("output")
 			to, _ := flags.GetString("to")
 			mediaPath, _ := flags.GetString("path")
 			title, _ := flags.GetString("title")
@@ -385,10 +384,8 @@ Records not involved are written exactly as they were read.`,
 			batch, _ := flags.GetString("batch")
 			root, _ := flags.GetString("root")
 
-			if out == "" {
-				return usageError{errors.New("--output is required")}
-			}
-			if err := checkNotInput(args[0], out); err != nil {
+			out, err := outputPath(cmd, args[0])
+			if err != nil {
 				return err
 			}
 			var rows []mediaRow
@@ -417,25 +414,22 @@ Records not involved are written exactly as they were read.`,
 			if err := encoder.SyncTags(doc); err != nil {
 				return err
 			}
-			var buf bytes.Buffer
-			if err := encodeDocument(&buf, doc); err != nil {
+			if err := writeOutput(cmd, out, doc); err != nil {
 				return err
 			}
-			if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
-				return err
-			}
+			w := reportWriter(cmd, out)
 			if format == formatJSON {
-				return writeJSON(cmd.OutOrStdout(), added)
+				return writeJSON(w, added)
 			}
 			for _, a := range added {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", a.To, a.Object, a.Action, oneLine(a.Path)); err != nil {
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", a.To, a.Object, a.Action, oneLine(a.Path)); err != nil {
 					return err
 				}
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringP("output", "o", "", "file to write the result to (required; never the input)")
+	addOutputFlag(cmd)
 	cmd.Flags().String("to", "", "xref of the individual, family or source to link the media from")
 	cmd.Flags().String("path", "", "the media file's path, as FILE will hold it")
 	cmd.Flags().String("title", "", "title of a new OBJE record's file (TITL)")
@@ -443,18 +437,6 @@ Records not involved are written exactly as they were read.`,
 	cmd.Flags().String("batch", "", "tab-separated file of rows: xref, path, optional title")
 	cmd.Flags().String("root", "", "media folder each path must name a file in")
 	return cmd
-}
-
-// checkNotInput refuses an output path that is the input file.
-func checkNotInput(in, out string) error {
-	inInfo, err := os.Stat(in)
-	if err != nil {
-		return err
-	}
-	if outInfo, err := os.Stat(out); err == nil && os.SameFile(inInfo, outInfo) {
-		return usageError{fmt.Errorf("--output %s is the input file; write to a new file", out)}
-	}
-	return nil
 }
 
 // readMediaBatch reads the rows of a --batch file.

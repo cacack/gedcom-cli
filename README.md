@@ -396,7 +396,7 @@ target version cannot hold (`data loss`, with each `dropped` value), what was ap
 normalized or preserved, each kind of transformation with a count, and
 validation issues in the result. A conversion that loses data still writes
 the output and exits `0`; with `--fail-on-loss` it writes nothing and exits
-`1`, with the report on stdout. An existing output file is replaced only once
+`1`, still printing the report. An existing output file is replaced only once
 the whole result is ready, so a failed conversion leaves it as it was. Lines the conversion leaves alone keep their
 layout, so converting a UTF-8 file to the version it already has writes it
 back byte-identical. 5.5 is not a target, since 5.5 does not allow UTF-8.

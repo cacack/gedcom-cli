@@ -478,3 +478,59 @@ func TestMediaAddSkipsDanglingXRef(t *testing.T) {
 		t.Errorf("stdout = %q, want %q", stdout, want)
 	}
 }
+
+// -o - puts the GEDCOM on stdout and the report on stderr.
+func TestMediaAddToStdout(t *testing.T) {
+	file, root := mediaFixture(t, mediaGED, "photos/cara.jpg")
+	out := filepath.Join(t.TempDir(), "out.ged")
+	args := []string{"media", "add", file, "--root", root, "--to", "I2", "--path", "photos/cara.jpg", "-o"}
+	if code, _, stderr := run(t, append(args, out)...); code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	code, stdout, stderr := run(t, append(args, "-")...)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if stdout != readFile(t, out) {
+		t.Errorf("stdout = %q, want the file -o writes", stdout)
+	}
+	if want := "@I2@\t@O3@\tcreated\tphotos/cara.jpg\n"; stderr != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
+// An existing output is replaced by renaming a temporary file over it, never
+// written in place: a hard link to the old file keeps the old bytes. The new
+// file keeps the old one's permissions, and nothing else is left behind.
+func TestMediaAddReplacesExistingOutput(t *testing.T) {
+	file, _ := mediaFixture(t, mediaGED)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.ged")
+	if err := os.WriteFile(out, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link.ged")
+	if err := os.Link(out, link); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := run(t, "media", "add", file, "--to", "I2", "--path", "photos/cara.jpg", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if got := readFile(t, out); !strings.Contains(got, "1 FILE photos/cara.jpg") {
+		t.Errorf("output not replaced:\n%s", got)
+	}
+	if got := readFile(t, link); got != "old\n" {
+		t.Errorf("the old file was written in place: %q", got)
+	}
+	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("replaced file mode = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("want only out.ged in the directory, got %v", entries)
+	}
+}
