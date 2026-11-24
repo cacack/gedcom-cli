@@ -2,6 +2,9 @@ module github.com/cacack/gedcom-cli
 
 go 1.25.0
 
+// The toolchain CI and releases build with (setup-go reads it).
+toolchain go1.27.4
+
 require (
 	github.com/cacack/gedcom-go/v3 v3.13.0
 	github.com/spf13/cobra v1.10.2
