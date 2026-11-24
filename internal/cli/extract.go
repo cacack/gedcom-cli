@@ -110,7 +110,9 @@ once the whole file is written.`,
 			}
 			doc := res.Document
 			if living.redact {
-				redactDocument(hiddenRecords(doc, presumedLiving(doc, living.cfg)))
+				if err := redactDocument(hiddenRecords(doc, presumedLiving(doc, living.cfg))); err != nil {
+					return err
+				}
 			}
 			if strip {
 				stripSubmitters(doc)

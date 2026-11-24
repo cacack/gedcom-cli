@@ -154,7 +154,9 @@ one UTF-8 file, combine writes it back exactly as it was read.
 			}
 
 			if living.redact {
-				redactDocument(hiddenRecords(doc, presumedLiving(doc, living.cfg)))
+				if err := redactDocument(hiddenRecords(doc, presumedLiving(doc, living.cfg))); err != nil {
+					return err
+				}
 			}
 			if err := writeOutput(cmd, out, doc); err != nil {
 				return err
