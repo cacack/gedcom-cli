@@ -30,7 +30,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: stable
+          go-version-file: go.mod
           cache: true
 
       - name: Verify dependencies
@@ -38,6 +38,9 @@ jobs:
 
       - name: Vet, test, format
         run: make check
+
+      - name: Check for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   # Catch a broken release config here, not when a release is being cut.
   release-check:
@@ -58,7 +61,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: stable
+          go-version-file: go.mod
           cache: true
 
       - name: Check GoReleaser config
