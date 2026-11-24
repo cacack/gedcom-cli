@@ -263,13 +263,19 @@ func TestGetHeaderNotRedacted(t *testing.T) {
 	}
 }
 
-// TestGetHeaderXRef checks that only HEAD names the header: @HEAD@ is an xref.
+// TestGetHeaderXRef checks that only HEAD names the header, @HEAD@ being an
+// xref, and that a missing xref beside HEAD prints nothing.
 func TestGetHeaderXRef(t *testing.T) {
 	for _, arg := range []string{"@HEAD@", "head"} {
 		code, stdout, stderr := run(t, "get", records, arg)
 		if code != ExitError || stdout != "" || !strings.Contains(stderr, "no such record: @"+strings.Trim(arg, "@")+"@\n") {
 			t.Errorf("%s: exit = %d, stdout = %q, stderr = %q", arg, code, stdout, stderr)
 		}
+	}
+	// A missing xref fails before the header is printed.
+	code, stdout, stderr := run(t, "get", records, "HEAD", "@NOPE@")
+	if code != ExitError || stdout != "" || !strings.Contains(stderr, "no such record: @NOPE@\n") {
+		t.Errorf("HEAD @NOPE@: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 }
 
