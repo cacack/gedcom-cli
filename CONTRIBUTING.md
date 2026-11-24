@@ -14,7 +14,7 @@ pull requests and releases are covered in README
   (`root.go`), or on its parent command for a subcommand. A command usually
   has a file of its own, named after it, with its tests beside it in
   `<name>_test.go`. Commands that share most of their code may share a file
-  (`merge.go` holds `merge-people` and `merge-families`), and a command group
+  (`merge.go` holds the `merge-*` commands), and a command group
   may keep its subcommands in one file or split them into one file each.
 - Code shared by commands: `root.go` (exit codes, `usageError`, `--format`),
   `living.go` (`--redact-living`) and `write.go` (reading a file to write it
