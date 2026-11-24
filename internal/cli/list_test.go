@@ -217,6 +217,139 @@ func TestListTextHasNoControlCharacters(t *testing.T) {
 	}
 }
 
+// places is a file whose PLAC values repeat, vary in spacing and case, carry
+// coordinates on one use, and are absent on one line.
+const places = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+	"0 @I1@ INDI\n1 NAME Cora /Sample/\n" +
+	"1 BIRT\n2 PLAC Springfield, Example County, Ohio\n" +
+	"1 DEAT\n2 PLAC Springfield,  Example,   Ohio\n" +
+	"1 BURI\n2 PLAC\n" +
+	"0 @I2@ INDI\n1 NAME Dell /Sample/\n" +
+	"1 BIRT\n2 PLAC Springfield, Example County, Ohio\n3 MAP\n4 LATI N39.9\n4 LONG W83.8\n" +
+	"1 DEAT\n2 PLAC springfield, example county, ohio\n" +
+	"1 BURI\n2 PLAC Ohio SPRINGFIELD\n3 NOTE no coordinates\n4 LATI N1\n" +
+	"0 @F1@ FAM\n1 MARR\n2 PLAC Springfield, Example County, Ohio\n" +
+	"0 TRLR\n"
+
+func writePlaces(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "places.ged")
+	if err := os.WriteFile(path, []byte(places), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestListPlac(t *testing.T) {
+	path := writePlaces(t)
+	// Count descending, then byte order: uppercase sorts before lowercase.
+	const want = "3\tSpringfield, Example County, Ohio\n" +
+		"1\tOhio SPRINGFIELD\n" +
+		"1\tSpringfield,  Example,   Ohio\n" +
+		"1\tspringfield, example county, ohio\n"
+	for _, kind := range []string{"plac", "PLAC"} {
+		code, stdout, stderr := run(t, "list", path, kind)
+		if code != ExitOK || stderr != "" {
+			t.Fatalf("%s: exit = %d, stderr = %q", kind, code, stderr)
+		}
+		if stdout != want {
+			t.Errorf("%s: stdout =\n%s\nwant\n%s", kind, stdout, want)
+		}
+	}
+
+	code, stdout, stderr := run(t, "list", "--limit", "2", path, "plac")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("limit: exit = %d, stderr = %q", code, stderr)
+	}
+	if first := strings.Join(strings.SplitAfter(want, "\n")[:2], ""); stdout != first {
+		t.Errorf("--limit 2: stdout =\n%s\nwant the two most used:\n%s", stdout, first)
+	}
+}
+
+func TestListPlacJSON(t *testing.T) {
+	code, stdout, stderr := run(t, "list", "--format", "json", writePlaces(t), "plac")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array of objects: %v\n%s", err, stdout)
+	}
+	// Only the place with a MAP under a use of it has coordinates.
+	want := []map[string]any{
+		{"place": "Springfield, Example County, Ohio", "count": float64(3), "latitude": "N39.9", "longitude": "W83.8"},
+		{"place": "Ohio SPRINGFIELD", "count": float64(1)},
+		{"place": "Springfield,  Example,   Ohio", "count": float64(1)},
+		{"place": "springfield, example county, ohio", "count": float64(1)},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got  %v\nwant %v", got, want)
+	}
+}
+
+// TestListPlacKeepsValue checks that a place is listed as written: trailing
+// space kept, and a control character a space in text only.
+func TestListPlacKeepsValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "raw.ged")
+	const data = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+		"0 @I1@ INDI\n1 BIRT\n2 PLAC Oldtown \n1 DEAT\n2 PLAC Oldtown\n1 BURI\n2 PLAC Old\x1b[2Jtown\n" +
+		"0 TRLR\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := run(t, "list", path, "plac")
+	if want := "1\tOld [2Jtown\n1\tOldtown\n1\tOldtown \n"; code != ExitOK || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+	code, stdout, stderr = run(t, "list", "--format", "json", path, "plac")
+	if code != ExitOK || !strings.Contains(stdout, `"Old\u001b[2Jtown"`) || !strings.Contains(stdout, `"Oldtown "`) {
+		t.Errorf("json: exit = %d, stderr = %q, stdout = %s", code, stderr, stdout)
+	}
+}
+
+// TestListPlacCoordinates checks that coordinates come from the first use
+// that gives both: a MAP with only a latitude is passed over.
+func TestListPlacCoordinates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "map.ged")
+	const data = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+		"0 @I1@ INDI\n1 BIRT\n2 PLAC Oldtown\n3 MAP\n4 LATI N1\n" +
+		"1 DEAT\n2 PLAC Oldtown\n3 MAP\n4 LATI N2\n4 LONG W3\n" +
+		"1 BURI\n2 PLAC Oldtown\n3 MAP\n4 LATI N4\n4 LONG W5\n" +
+		"0 TRLR\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := run(t, "list", "--format", "json", path, "plac")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []placRow
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array of places: %v\n%s", err, stdout)
+	}
+	if want := []placRow{{Count: 3, Place: "Oldtown", Latitude: "N2", Longitude: "W3"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+// TestListPlacEmpty lists the places of a file that has none: a PLAC with no
+// value, or only whitespace, is not a place.
+func TestListPlacEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "none.ged")
+	const data = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @I1@ INDI\n1 BIRT\n2 PLAC\n1 DEAT\n2 PLAC \t\n0 TRLR\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := run(t, "list", path, "plac")
+	if code != ExitOK || stdout != "" || stderr != "" {
+		t.Errorf("text: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+	code, stdout, stderr = run(t, "list", "--format", "json", path, "plac")
+	if code != ExitOK || stdout != "[]\n" || stderr != "" {
+		t.Errorf("json: exit = %d, stdout = %q, stderr = %q; want []", code, stdout, stderr)
+	}
+}
+
 func TestListUnknownType(t *testing.T) {
 	code, stdout, stderr := run(t, "list", records, "people")
 	if code != ExitUsage {
@@ -246,6 +379,7 @@ func TestListExitCodes(t *testing.T) {
 		{"bad format", []string{"list", "--format", "xml", records, "indi"}, ExitUsage},
 		{"unknown type before the file is read", []string{"list", "testdata/does-not-exist.ged", "people"}, ExitUsage},
 		{"missing file", []string{"list", "testdata/does-not-exist.ged", "indi"}, ExitError},
+		{"missing file for plac", []string{"list", "testdata/does-not-exist.ged", "plac"}, ExitError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,7 +399,9 @@ func TestListHelpHasExample(t *testing.T) {
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	if !strings.Contains(stdout, "gedcom list family.ged indi") {
-		t.Errorf("help has no example:\n%s", stdout)
+	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac  count, place"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("help lacks %q:\n%s", want, stdout)
+		}
 	}
 }

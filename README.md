@@ -88,6 +88,23 @@ To find people by surname:
 gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
 ```
 
+`list <file> plac` lists places instead of records: each distinct `PLAC`
+value exactly as written, with how many times it is used, most used first
+(ties in byte order), so each variant spelling of a place is its own line:
+
+```sh
+gedcom list family.ged plac
+```
+
+```text
+12	Springfield, Example County, Ohio
+3	Springfield,  Example,   Ohio
+1	Ohio SPRINGFIELD
+```
+
+In JSON each place is `{"count", "place"}`, with `latitude` and `longitude`
+from the first use of the place that has a `MAP` giving both.
+
 `gedcom list --help` names the fields of each type. One known gap: for `obje`,
 a record that puts `TITL` and `FORM` beside `FILE` instead of under it (the
 GEDCOM 5.5 layout) lists its title and format empty; `get` shows the whole
@@ -234,9 +251,10 @@ text row is `changed`, an empty field, then `HEAD`, and its JSON `xref` is
 `media check` reports whether each `FILE` reference resolves to a file under a
 media folder: `ok`, `missing`, `empty` (a `FILE` with no value: the media is
 not a local file), `url`, `absolute` (a rooted path) or `outside` (a relative
-path that climbs out of the folder); the last two are not resolved. It exits `1` when any reference is missing. `--unreferenced` also
-lists the files in the folder that nothing references. The media files are
-only looked at, never changed:
+path that climbs out of the folder); the last two are not resolved. It exits
+`1` when any reference is missing. `--unreferenced` also lists the files in
+the folder that nothing references. The media files are only looked at, never
+changed:
 
 ```sh
 gedcom media check --root media family.ged
