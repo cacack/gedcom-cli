@@ -45,7 +45,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
 | [`get`](#get) | Print records by xref, or the header |
-| [`list`](#list) | List the records of one type, or the places, one per line |
+| [`list`](#list) | List the records of one type, or the places, tag paths or one tag's values, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
 | [`relatives`](#relatives) | Print people with their parents, siblings, spouses and children |
@@ -145,6 +145,25 @@ gedcom list family.ged plac
 12	Springfield, Example County, Ohio
 3	Springfield,  Example,   Ohio
 1	Ohio SPRINGFIELD
+```
+
+`list <file> tags` surveys what the file holds: each tag path (the record
+type and the tags down to the line, such as `INDI.BIRT.DATE`) with its number
+of lines, most used first. The counts cover every line but the header, the
+trailer and the records' level-0 lines. `--vendor` keeps only the paths with
+an extension tag (starting with `_`) in them. `list <file> values --tag
+<path>` lists the distinct values at one path with their counts, as `plac`
+does for places:
+
+```sh
+gedcom list --vendor family.ged tags
+gedcom list --tag INDI.EVEN.TYPE family.ged values
+```
+
+```text
+14	INDI._MILT
+14	INDI._MILT.DATE
+2	INDI._UID
 ```
 
 ### ancestors and descendants
