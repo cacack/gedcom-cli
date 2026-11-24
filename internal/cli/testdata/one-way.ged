@@ -1,0 +1,33 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Parent /A/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Child /A/
+1 FAMC @F1@
+1 FAMS @F2@
+0 @I3@ INDI
+1 NAME Husband /B/
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Wife /B/
+1 FAMS @F2@
+0 @I5@ INDI
+1 NAME Kid /B/
+1 FAMC @F2@
+0 @I6@ INDI
+1 NAME Stray /C/
+1 FAMC @F2@
+0 @F1@ FAM
+1 HUSB @I1@
+1 CHIL @I2@
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I4@
+1 CHIL @I5@
+0 TRLR

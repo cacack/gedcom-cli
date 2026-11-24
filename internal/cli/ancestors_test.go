@@ -108,6 +108,44 @@ func TestWalkJSONEmpty(t *testing.T) {
 	}
 }
 
+// oneWay is the shape of a real file: @I2@ has a FAMS link to @F2@, which
+// names @I3@ and @I4@, and @I6@ a FAMC link to @F2@, which does not name her
+// as a child.
+const oneWay = "testdata/one-way.ged"
+
+// TestOneWayLinks checks that ancestors, descendants and relatives all ignore
+// a family link only one side records, and that the help of each says so.
+func TestOneWayLinks(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"descendants, one-way FAMS", []string{"descendants", oneWay, "I1"}, "1\t@I2@\tChild /A/\t\t\ttrue\n"},
+		{"ancestors, one-way FAMS", []string{"ancestors", oneWay, "I5"}, "1\t@I3@\tHusband /B/\t\t\ttrue\n1\t@I4@\tWife /B/\t\t\ttrue\n"},
+		{"ancestors, one-way FAMC", []string{"ancestors", oneWay, "I6"}, ""},
+		{"relatives, one-way FAMS", []string{"relatives", oneWay, "I2"}, "self\t\t@I2@\tChild /A/\t\t\t\nparent\t@F1@\t@I1@\tParent /A/\t\t\t\n"},
+		{"relatives, one-way FAMC", []string{"relatives", oneWay, "I6"}, "self\t\t@I6@\tStray /C/\t\t\t\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, stdout, stderr := run(t, tt.args...)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			if stdout != tt.want {
+				t.Errorf("stdout =\n%s\nwant\n%s", stdout, tt.want)
+			}
+		})
+	}
+	for _, name := range []string{"ancestors", "descendants", "relatives"} {
+		code, stdout, _ := run(t, name, "--help")
+		if code != ExitOK || !strings.Contains(stdout, linkRule) {
+			t.Errorf("%s --help: exit = %d, does not state the link rule:\n%s", name, code, stdout)
+		}
+	}
+}
+
 // TestRelativeRowsSkipsUnresolved checks that a walk result naming no
 // individual is skipped, not dereferenced.
 func TestRelativeRowsSkipsUnresolved(t *testing.T) {
