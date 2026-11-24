@@ -464,6 +464,16 @@ fact stated two ways, or two facts, so check which. A `candidate` is a pair
 of families the kept person is now a spouse in with the same partner, which
 `merge-people` leaves for `merge-families`. Run `validate` on the result.
 
+Two files rarely write one event with the same lines, so a person merged from
+several files can end up with one `BIRT` per file. `--fold-events` (on both
+commands) folds an event of the dropped record into the kept record's event
+of the same tag when their dates are the same date, however written
+(`7 DEC 1977`, `07 Dec 1977`), and their places agree or only one has a
+place; the kept event gains the other's citations, notes and place. Each fold
+is reported as `folded`, with the dropped event's lines and the kept event's
+after the fold. Events that differ in date stay separate and are reported as
+conflicts. `--help` gives the full rule.
+
 ### combine
 
 Joins files into one, in the order given, and writes it to a new file. No
