@@ -217,6 +217,11 @@ warning (1)
   @I2@ line 19	MISSING_NAME	Individual record has no NAME	validate
 ```
 
+A family link only one record claims, such as a `FAMS` to a family that does
+not name the person as `HUSB` or `WIFE`, is an `UNRECIPROCATED_<tag>` warning,
+where `<tag>` is the pointer that is there. It is reported on the individual,
+with the family as related xref.
+
 A file with nothing to report prints `family.ged: no findings`. The exit code
 is `1` whenever the file has an error-severity finding, with the report still
 on stdout and a one-line summary on stderr.
