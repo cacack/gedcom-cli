@@ -314,6 +314,23 @@ The output carries the input's header and submitter, contact details
 included: read the help on what `--strip-submitter` does and does not remove
 before sharing a file.
 
+To put the extracts of one master back together in the master's order, save
+each one's JSON report and give `combine` the reports of the files after the
+first as `--dropped`:
+
+```sh
+gedcom extract --format json tree.ged I1 I2 -o a.ged > a.json
+gedcom extract --format json tree.ged I3 I4 -o b.ged > b.json
+gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged
+gedcom diff tree.ged tree2.ged
+```
+
+Without the reports, a family split between files gets its `HUSB`, `WIFE`
+and `CHIL` lines back in one file's order. Either way the round trip
+reproduces only the records reachable from the people extracted: a record
+nothing cites (a `SUBM`, `REPO` or `SOUR` with no pointer to it) is in no
+extract, and so not in the combined file.
+
 ### put
 
 Corrects a file from a file of level-0 records, with no header, as `get`
@@ -413,8 +430,9 @@ of families the kept person is now a spouse in with the same partner, which
 Joins files into one, in the order given, and writes it to a new file. No
 people are merged. The strategy says what to do with an xref two files share:
 `zip` for files cut from one master by [`extract`](#extract), where a shared
-xref is the same record; `prefix` or `renumber` for unrelated trees, where a
-later file's colliding xrefs are renamed:
+xref is the same record; `prefix` or `renumber` for unrelated trees. `prefix`
+renames every record of each later file, so a record's origin can be read
+from its xref; `renumber` renames only a later file's colliding xrefs:
 
 ```sh
 gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
@@ -424,7 +442,9 @@ gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
 ```text
 wrote both.ged: 412 records, 260 individuals, 98 families
 cousin.ged	@F1@	@C_F1@
+cousin.ged	@F2@	@C_F2@
 cousin.ged	@I1@	@C_I1@
+...
 ```
 
 Each renamed xref is a line (file, old, new).

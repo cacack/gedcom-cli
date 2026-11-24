@@ -124,6 +124,178 @@ func TestCombineZipRoundTrip(t *testing.T) {
 	}
 }
 
+// zipOrderFixture is a master whose family @F1@ has three children in birth
+// order, Quin (@I3@), Rhea (@I4@) and Sol (@I5@), with a MARR between its
+// spouse and CHIL lines. The father, Otto (@I1@), has a second family (@F2@),
+// and Quin one of his own (@F3@). Every record is cited, so the extracts
+// together hold them all.
+const zipOrderFixture = "testdata/zip-order.ged"
+
+// extractWithReport runs 'gedcom extract --format json' and saves its report,
+// returning the GEDCOM file and the report file.
+func extractWithReport(t *testing.T, master, name string, xrefs ...string) (ged, report string) {
+	t.Helper()
+	dir := t.TempDir()
+	ged, report = filepath.Join(dir, name+".ged"), filepath.Join(dir, name+".json")
+	code, stdout, stderr := run(t, append(append([]string{"extract", "--format", "json", master}, xrefs...), "-o", ged)...)
+	if code != ExitOK {
+		t.Fatalf("extract %s: exit = %d, stderr = %q", name, code, stderr)
+	}
+	if err := os.WriteFile(report, []byte(stdout), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return ged, report
+}
+
+// TestCombineZipDropped cuts the master with 'gedcom extract' so that the
+// first file holds the last-born child of @F1@ and a later one the earlier
+// two, and zips the files back. Without the extracts' reports @F1@'s CHIL
+// lines come back out of birth order; with them, 'gedcom diff' against the
+// master finds nothing.
+func TestCombineZipDropped(t *testing.T) {
+	master := gedcomRecords(t, zipOrderFixture)
+	tests := []struct {
+		name string
+		sets [][]string
+	}{
+		{"two files", [][]string{{"I1", "I5", "I7"}, {"I2", "I3", "I4", "I6", "I8"}}},
+		{"three files", [][]string{{"I5", "I7"}, {"I1", "I4", "I6"}, {"I2", "I3", "I8"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var files, reports []string
+			for i, set := range tt.sets {
+				ged, report := extractWithReport(t, zipOrderFixture, string(rune('a'+i)), set...)
+				files = append(files, ged)
+				if i > 0 {
+					reports = append(reports, "--dropped", report)
+				}
+				// A person's families are all extracted with the person, so
+				// no FAMS or FAMC line is ever cut.
+				var got extractReport
+				if err := json.Unmarshal([]byte(readText(t, report)), &got); err != nil {
+					t.Fatal(err)
+				}
+				for _, d := range got.Dropped {
+					if d.Tag == "FAMS" || d.Tag == "FAMC" {
+						t.Errorf("extract dropped %s", d)
+					}
+				}
+			}
+			zip := func(extra ...string) (out, diff string) {
+				t.Helper()
+				out = filepath.Join(t.TempDir(), "zipped.ged")
+				args := append(append([]string{"combine", "--strategy", "zip"}, files...), extra...)
+				code, stdout, stderr := run(t, append(args, "-o", out)...)
+				if want := "wrote " + out + ": 13 records, 8 individuals, 3 families\n"; code != ExitOK || stderr != "" || stdout != want {
+					t.Fatalf("combine: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+				}
+				code, diff, stderr = run(t, "diff", zipOrderFixture, out)
+				if code != ExitOK || stderr != "" {
+					t.Fatalf("diff: exit = %d, stderr = %q", code, stderr)
+				}
+				// Otto has FAMS lines to two families whose wives are in
+				// another file, Quin a FAMC and a FAMS, and Sol a FAMC to a
+				// family whose other members are: all as in the master.
+				zipped := gedcomRecords(t, out)
+				for _, key := range []string{"0 @I1@ INDI", "0 @I3@ INDI", "0 @I5@ INDI"} {
+					if !reflect.DeepEqual(zipped[key], master[key]) {
+						t.Errorf("%s:\n got %q\nwant %q", key, zipped[key], master[key])
+					}
+				}
+				return out, diff
+			}
+
+			// This pins a limit of the library, not a behavior to keep: it
+			// shows that the cut exercises --dropped. If gedcom-go comes to
+			// restore the master's order without reports, this subtest
+			// fails; delete it then, with the help and README text on it.
+			t.Run("without reports, one file's order", func(t *testing.T) {
+				out, diff := zip()
+				if !strings.HasPrefix(diff, "changed\t@F1@\tFAM\n") || strings.Count(diff, "changed\t") != 1 {
+					t.Errorf("diff = %q, want only @F1@ changed", diff)
+				}
+				got, want := gedcomRecords(t, out)["0 @F1@ FAM"], master["0 @F1@ FAM"]
+				if reflect.DeepEqual(got, want) || !reflect.DeepEqual(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want))) {
+					t.Errorf("@F1@ = %q, want the lines of %q in another order", got, want)
+				}
+			})
+
+			t.Run("with reports, the master's order", func(t *testing.T) {
+				out, diff := zip(reports...)
+				if want := zipOrderFixture + " and " + out + ": no differences\n"; diff != want {
+					t.Errorf("diff = %q, want %q", diff, want)
+				}
+				for key, lines := range master {
+					if key != "0 HEAD" && !reflect.DeepEqual(gedcomRecords(t, out)[key], lines) {
+						t.Errorf("%s = %q, want %q", key, gedcomRecords(t, out)[key], lines)
+					}
+				}
+			})
+		})
+	}
+}
+
+// TestCombineDroppedReports checks that --dropped takes its reports
+// comma-separated too, and that a report that is not one fails the command by
+// name, with nothing written.
+func TestCombineDroppedReports(t *testing.T) {
+	a, _ := extractWithReport(t, zipOrderFixture, "a", "I5", "I7")
+	b, bReport := extractWithReport(t, zipOrderFixture, "b", "I1", "I4", "I6")
+	c, cReport := extractWithReport(t, zipOrderFixture, "c", "I2", "I3", "I8")
+	out := filepath.Join(t.TempDir(), "zipped.ged")
+	if code, _, stderr := run(t, "combine", "--strategy", "zip", "--dropped", bReport+","+cReport, a, b, c, "-o", out); code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if _, diff, _ := run(t, "diff", zipOrderFixture, out); !strings.HasSuffix(diff, ": no differences\n") {
+		t.Errorf("diff = %q, want no differences", diff)
+	}
+
+	tests := []struct {
+		name, report, want string
+	}{
+		{"missing", filepath.Join(t.TempDir(), "nope.json"), "nope.json"},
+		{"not JSON", writeTemp(t, "text.json", "wrote b.ged: 9 records\n"), "text.json: not an extract --format json report"},
+		{"a GEDCOM file", b, "b.ged: not an extract --format json report"},
+		{"JSON of another shape", writeTemp(t, "list.json", "[]\n"), "list.json: not an extract --format json report"},
+		{"no dropped list", writeTemp(t, "other.json", `{"output": "b.ged"}`), `other.json: not an extract --format json report: no "dropped" list`},
+		// As an extract that did not record positions wrote it: it would
+		// order nothing.
+		{"no positions", writeTemp(t, "old.json", `{"output": "b.ged", "dropped": [{"xref": "@F1@", "tag": "CHIL", "target": "@I5@", "restorable": true}]}`), `old.json: dropped pointer @F1@ CHIL @I5@ (restorable) has no "position"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "out.ged")
+			code, stdout, stderr := run(t, "combine", "--strategy", "zip", "--dropped", tt.report, a, b, "-o", out)
+			if code != ExitError || stdout != "" || !strings.Contains(stderr, tt.want) {
+				t.Errorf("exit = %d, stdout = %q, stderr = %q; want exit %d and %q", code, stdout, stderr, ExitError, tt.want)
+			}
+			if _, err := os.Stat(out); !os.IsNotExist(err) {
+				t.Errorf("output was written: %v", err)
+			}
+		})
+	}
+}
+
+// TestCombineDroppedMispaired checks that a report given for a file extract
+// did not write it for is a warning: the library joins the lines as without
+// it, so the file is still written.
+func TestCombineDroppedMispaired(t *testing.T) {
+	a, _ := extractWithReport(t, zipOrderFixture, "a", "I5", "I7")
+	b, bReport := extractWithReport(t, zipOrderFixture, "b", "I1", "I4", "I6")
+	c, cReport := extractWithReport(t, zipOrderFixture, "c", "I2", "I3", "I8")
+	out := filepath.Join(t.TempDir(), "zipped.ged")
+	code, stdout, stderr := run(t, "combine", "--strategy", "zip", "--dropped", cReport, "--dropped", bReport, a, b, c, "-o", out)
+	if code != ExitOK || !strings.HasPrefix(stdout, "wrote "+out) {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+	want := "gedcom: warning: " + cReport + " is the report of " + c + ", not of " + b + ": if it is another file's, the order is not restored\n" +
+		"gedcom: warning: " + bReport + " is the report of " + b + ", not of " + c + ": if it is another file's, the order is not restored\n"
+	if stderr != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
 func TestCombineZipJSON(t *testing.T) {
 	branches := writeBranches(t, combineFixture, combineBranches)
 	out := filepath.Join(t.TempDir(), "tree.ged")
@@ -207,37 +379,80 @@ func TestCombineZipConflict(t *testing.T) {
 	}
 }
 
+// recordXRefs returns the xref of every record of a GEDCOM file, sorted.
+func recordXRefs(t *testing.T, path string) []string {
+	t.Helper()
+	var xrefs []string
+	for key := range gedcomRecords(t, path) {
+		if fields := strings.Fields(key); len(fields) > 1 && strings.HasPrefix(fields[1], "@") {
+			xrefs = append(xrefs, fields[1])
+		}
+	}
+	slices.Sort(xrefs)
+	return xrefs
+}
+
+// prefixed maps each xref to itself with the prefix, as --strategy prefix
+// renames it.
+func prefixed(xrefs []string, prefix string) map[string]string {
+	renamed := make(map[string]string, len(xrefs))
+	for _, xref := range xrefs {
+		renamed[xref] = "@" + prefix + xref[1:]
+	}
+	return renamed
+}
+
+// TestCombinePrefix combines minimal, minimal again and the combine fixture.
+// Of the fixture's 15 xrefs, @U1@, @I1@, @I2@ and @F1@ collide with minimal's
+// and the other 11 collide with nothing: all 15 get the fixture's prefix.
 func TestCombinePrefix(t *testing.T) {
+	first, later := recordXRefs(t, sample), recordXRefs(t, combineFixture)
+	if len(first) != 4 || len(later) != 15 {
+		t.Fatalf("fixtures hold %d and %d xrefs, want 4 and 15", len(first), len(later))
+	}
 	out := filepath.Join(t.TempDir(), "all.ged")
 	code, stdout, stderr := run(t, "combine", "--strategy", "prefix", "--prefix", "B_,C_", sample, sample, combineFixture, "-o", out)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	// minimal holds 4 records, combine 15; every one is kept.
-	if want := "wrote " + out + ": 23 records, 12 individuals, 5 families\n"; !strings.HasPrefix(stdout, want) {
-		t.Errorf("stdout = %q, want it to start %q", stdout, want)
-	}
-	for _, want := range []string{sample + "\t@I1@\t@B_I1@\n", sample + "\t@F1@\t@B_F1@\n", sample + "\t@U1@\t@B_U1@\n", combineFixture + "\t@I1@\t@C_I1@\n"} {
-		if !strings.Contains(stdout, want) {
-			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+	// minimal holds 4 records, combine 15; every one is kept, and every one
+	// of a later file is a line of the report.
+	want := "wrote " + out + ": 23 records, 12 individuals, 5 families\n"
+	wantXRefs := slices.Clone(first)
+	for _, in := range []struct {
+		file, prefix string
+		xrefs        []string
+	}{{sample, "B_", first}, {combineFixture, "C_", later}} {
+		renamed := prefixed(in.xrefs, in.prefix)
+		for _, old := range in.xrefs {
+			want += in.file + "\t" + old + "\t" + renamed[old] + "\n"
+			wantXRefs = append(wantXRefs, renamed[old])
 		}
 	}
-	// @F3@ collides with nothing, so it keeps its xref.
-	if strings.Contains(stdout, combineFixture+"\t@F3@") {
-		t.Errorf("stdout renames @F3@:\n%s", stdout)
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	slices.Sort(wantXRefs)
+	if got := recordXRefs(t, out); !reflect.DeepEqual(got, wantXRefs) {
+		t.Errorf("output xrefs = %v, want %v", got, wantXRefs)
 	}
 	records := gedcomRecords(t, out)
-	for _, want := range []string{"0 @I1@ INDI", "0 @B_I1@ INDI", "0 @C_I1@ INDI", "0 @F3@ FAM", "0 @B_F1@ FAM", "0 @C_F1@ FAM"} {
-		if _, ok := records[want]; !ok {
-			t.Errorf("output lacks %q", want)
+	// The first file's records are as they were.
+	for key, lines := range gedcomRecords(t, sample) {
+		if key != "0 HEAD" && key != "0 TRLR" && !reflect.DeepEqual(records[key], lines) {
+			t.Errorf("%s = %q, want %q", key, records[key], lines)
 		}
 	}
-	// @I3@ collides with nothing either, but points to @F1@, which did.
-	if got := records["0 @I3@ INDI"]; !slices.Contains(got, "1 FAMC @C_F1@") || !slices.Contains(got, "1 FAMS @F3@") {
-		t.Errorf("@I3@ = %q: its pointers were not remapped", got)
+	// Pointers follow their records, colliding (@F1@) or not (@F3@).
+	if got := records["0 @C_I3@ INDI"]; !slices.Contains(got, "1 FAMC @C_F1@") || !slices.Contains(got, "1 FAMS @C_F3@") {
+		t.Errorf("@C_I3@ = %q: its pointers were not remapped", got)
+	}
+	code, stdout, stderr = run(t, "validate", out)
+	if code != ExitOK || stderr != "" || !strings.HasSuffix(stdout, ": no findings\n") {
+		t.Errorf("validate: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 
-	code, stdout, stderr = run(t, "combine", "--format", "json", "--strategy", "prefix", "--prefix", "B_", sample, sample, "-o", out)
+	code, stdout, stderr = run(t, "combine", "--format", "json", "--strategy", "prefix", "--prefix", "C_", sample, combineFixture, "-o", out)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
 	}
@@ -245,12 +460,29 @@ func TestCombinePrefix(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
-	want := []combineInput{
+	wantInputs := []combineInput{
 		{File: sample, Encoding: "UTF-8", Remapped: map[string]string{}},
-		{File: sample, Encoding: "UTF-8", Remapped: map[string]string{"@U1@": "@B_U1@", "@I1@": "@B_I1@", "@I2@": "@B_I2@", "@F1@": "@B_F1@"}},
+		{File: combineFixture, Encoding: "UTF-8", Remapped: prefixed(later, "C_")},
 	}
-	if got.Records != 8 || !reflect.DeepEqual(got.Inputs, want) {
-		t.Errorf("records = %d, inputs = %+v\nwant 8 and %+v", got.Records, got.Inputs, want)
+	if got.Records != 19 || !reflect.DeepEqual(got.Inputs, wantInputs) {
+		t.Errorf("records = %d, inputs = %+v\nwant 19 and %+v", got.Records, got.Inputs, wantInputs)
+	}
+}
+
+// TestCombinePrefixCollision checks that a prefixed xref an earlier file
+// already holds fails the command: the first file's @B_I1@ is what the
+// second's @I1@ becomes.
+func TestCombinePrefixCollision(t *testing.T) {
+	first := writeTemp(t, "first.ged", strings.ReplaceAll(readText(t, sample), "@I1@", "@B_I1@"))
+	out := filepath.Join(t.TempDir(), "both.ged")
+	for _, format := range []string{"text", "json"} {
+		code, stdout, stderr := run(t, "combine", "--format", format, "--strategy", "prefix", "--prefix", "B_", first, sample, "-o", out)
+		if want := "gedcom: combine " + sample + ": merge: xref collision: @B_I1@\n"; code != ExitError || stdout != "" || stderr != want {
+			t.Errorf("%s: exit = %d, stdout = %q, stderr = %q; want exit %d and %q", format, code, stdout, stderr, ExitError, want)
+		}
+		if _, err := os.Stat(out); !os.IsNotExist(err) {
+			t.Errorf("%s: output was written: %v", format, err)
+		}
 	}
 }
 
@@ -355,7 +587,15 @@ func TestCombineErrors(t *testing.T) {
 		{"output is input", []string{"combine", "--strategy", "zip", sample, input, "-o", input}, ExitUsage, "is the input file"},
 		{"no prefix", []string{"combine", "--strategy", "prefix", sample, sample, "-o", out}, ExitUsage, "got 0, want 1"},
 		{"too many prefixes", []string{"combine", "--strategy", "prefix", "--prefix", "B_,C_", sample, sample, "-o", out}, ExitUsage, "got 2, want 1"},
+		{"empty prefix", []string{"combine", "--strategy", "prefix", "--prefix", "B_,", sample, sample, sample, "-o", out}, ExitUsage, `invalid --prefix ""`},
+		{"prefix with @", []string{"combine", "--strategy", "prefix", "--prefix", "B@", sample, sample, "-o", out}, ExitUsage, `invalid --prefix "B@"`},
+		{"prefix with a space", []string{"combine", "--strategy", "prefix", "--prefix", "B ", sample, sample, "-o", out}, ExitUsage, `invalid --prefix "B "`},
+		{"prefix given twice", []string{"combine", "--strategy", "prefix", "--prefix", "B_,B_", sample, sample, sample, "-o", out}, ExitUsage, `--prefix "B_" is given twice`},
 		{"prefix without prefix strategy", []string{"combine", "--strategy", "zip", "--prefix", "B_", sample, sample, "-o", out}, ExitUsage, "--prefix needs --strategy prefix"},
+		{"dropped without zip", []string{"combine", "--strategy", "renumber", "--dropped", "b.json", sample, sample, "-o", out}, ExitUsage, "--dropped needs --strategy zip"},
+		{"no dropped for a file", []string{"combine", "--strategy", "zip", "--dropped", "b.json", sample, sample, sample, "-o", out}, ExitUsage, "--dropped needs one report per file after the first (the first file needs none): got 1, want 2"},
+		{"empty dropped", []string{"combine", "--strategy", "zip", "--dropped", "", sample, sample, "-o", out}, ExitUsage, "got 0, want 1"},
+		{"too many dropped", []string{"combine", "--strategy", "zip", "--dropped", "b.json,c.json", sample, sample, "-o", out}, ExitUsage, "got 2, want 1"},
 		{"missing file", []string{"combine", "--strategy", "zip", sample, "testdata/nope.ged", "-o", out}, ExitError, "nope.ged"},
 	}
 	for _, tt := range tests {
@@ -376,6 +616,11 @@ func TestCombineHelp(t *testing.T) {
 	for _, want := range []string{
 		"--strategy zip -o", "--strategy prefix --prefix C_", "--strategy renumber -o",
 		"must share a GEDCOM version", "the output is always UTF-8",
+		"Every record of each later file", "Only the colliding xrefs", "Nothing is renamed",
+		"with prefix, every xref of each file after the first",
+		"gedcom extract --format json tree.ged I3 I4 -o b.ged > b.json",
+		"--strategy zip --dropped maternal.json -o tree.ged",
+		"in one file's line order", "A record nothing cites",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)

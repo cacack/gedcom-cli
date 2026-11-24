@@ -1,23 +1,36 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/cacack/gedcom-go/v3/gedcom"
 	"github.com/cacack/gedcom-go/v3/merge"
 	"github.com/spf13/cobra"
 )
 
+// combinePrefix is the --strategy that takes --prefix, and combineZip the one
+// that takes --dropped.
+const (
+	combinePrefix = "prefix"
+	combineZip    = "zip"
+)
+
 // combineStrategies maps each --strategy to the library's collision strategy.
+// prefix renames every record of a later file before combining it (see
+// combineDocuments), so an xref that still collides is an error.
 var combineStrategies = map[string]merge.CollisionStrategy{
-	"zip":      merge.ZipSharedXRefs,
-	"prefix":   merge.PrefixDoc2,
-	"renumber": merge.RenumberDoc2,
+	combineZip:    merge.ZipSharedXRefs,
+	combinePrefix: merge.ErrorOnCollision,
+	"renumber":    merge.RenumberDoc2,
 }
 
 // combineReport is what combine prints: the file written, what it holds, what
@@ -76,18 +89,45 @@ merged: a person in two unrelated files stays two people.
             boundary. Copies that differ in anything else conflict: every
             conflicting xref is listed, the command exits 1, and nothing is
             written. Nothing is renamed. Records come in the order of the
-            first file that holds them, and joined pointer lines in each
-            file's line order, so the output holds the master's records but
-            not always in the master's order.
-  prefix    The files are unrelated trees. Each colliding xref of a later
-            file gets that file's --prefix, so its origin stays visible: with
-            --prefix B_, a second file's @I1@ becomes @B_I1@. Give one
-            prefix per file after the first.
-  renumber  As prefix, but a colliding xref gets the next free number of
-            its kind instead (@I1@ becomes @I43@).
+            first file that holds them. A family split between files gets
+            its HUSB, WIFE and CHIL lines back in one file's line order, not
+            always the master's (CHIL order is birth order), unless --dropped
+            is given.
+  prefix    The files are unrelated trees. Every record of each later file
+            gets that file's --prefix, whether or not its xref collides, so
+            a record's origin can be read from its xref: with --prefix B_, a
+            second file's @I1@ becomes @B_I1@. The first file's xrefs are
+            kept. Give one prefix per file after the first, each its own,
+            with no "@" or whitespace. A prefixed xref that an earlier file
+            already holds is an error: the command exits 1, and nothing is
+            written. A record whose xref is malformed (not @...@) keeps it,
+            and is not listed as renamed.
+  renumber  The files are unrelated trees. Only the colliding xrefs of a
+            later file are renamed, each to the next free number of its
+            kind (@I1@ becomes @I43@). Every other xref is kept.
 
-The report lists each input's renamed xrefs (JSON "remapped", old to new).
-With prefix and renumber every record of every input is kept.
+--dropped, with zip, puts the joined pointer lines back in the master's
+order. Save the report of each extract after the first, and pass them in the
+order of those files, one per file:
+
+  gedcom extract --format json tree.ged I1 I2 -o a.ged > a.json
+  gedcom extract --format json tree.ged I3 I4 -o b.ged > b.json
+  gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged
+
+Each report's "dropped" list says where every removed line sat in its record.
+A report belongs to the file as extract wrote it: do not pass one for a file
+edited since. Where a report does not fit its file, the lines are joined as
+without it: check the result with 'gedcom diff' against the master. A report
+that names another file than the one it is given for is a warning on stderr.
+
+Zipping extracts back reproduces only the records reachable from the people
+extracted. A record nothing cites (a SUBM, REPO or SOUR with no pointer to
+it) is in no extract, and so not in the output.
+
+The report lists each input's renamed xrefs (JSON "remapped", old to new):
+with prefix, every xref of each file after the first; with renumber, the
+colliding ones; with zip, none. With prefix and renumber every record of
+every input is kept.
 
 The files must share a GEDCOM version (5.5, 5.5.1 or 7.0); mixing them
 fails. They may declare different encodings (ANSEL, UTF-8, ...): each is
@@ -100,6 +140,7 @@ The output is written normalized, since it was read from no one file. Given
 one UTF-8 file, combine writes it back exactly as it was read.
 --redact-living applies to the output file, not only to the report.`,
 		Example: `  gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
+  gedcom combine paternal.ged maternal.ged --strategy zip --dropped maternal.json -o tree.ged
   gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
   gedcom combine --format json a.ged b.ged c.ged --strategy prefix --prefix B_,C_ -o all.ged
   gedcom combine a.ged b.ged --strategy renumber -o both.ged`,
@@ -116,18 +157,44 @@ one UTF-8 file, combine writes it back exactly as it was read.
 			}
 			name, _ := flags.GetString("strategy")
 			prefixes, _ := flags.GetStringSlice("prefix")
+			reports, _ := flags.GetStringSlice("dropped")
 			living, err := readLivingOptions(cmd)
 			if err != nil {
 				return err
 			}
-			strategy, ok := combineStrategies[name]
+			// Changed, not the count: an empty --dropped value is no report,
+			// and must not pass for the flag not being given.
+			givenDropped := flags.Changed("dropped")
+			_, ok := combineStrategies[name]
 			switch {
 			case !ok:
 				return usageError{fmt.Errorf(`invalid --strategy %q: want "zip", "prefix" or "renumber"`, name)}
-			case strategy == merge.PrefixDoc2 && len(prefixes) != len(args)-1:
+			case name == combinePrefix && len(prefixes) != len(args)-1:
 				return usageError{fmt.Errorf("--strategy prefix needs one --prefix per file after the first: got %d, want %d", len(prefixes), len(args)-1)}
-			case strategy != merge.PrefixDoc2 && len(prefixes) > 0:
+			case name != combinePrefix && len(prefixes) > 0:
 				return usageError{errors.New("--prefix needs --strategy prefix")}
+			case givenDropped && name != combineZip:
+				return usageError{errors.New("--dropped needs --strategy zip")}
+			case givenDropped && len(reports) != len(args)-1:
+				return usageError{fmt.Errorf("--dropped needs one report per file after the first (the first file needs none): got %d, want %d", len(reports), len(args)-1)}
+			}
+			if err := checkPrefixes(prefixes); err != nil {
+				return err
+			}
+			var dropped [][]gedcom.DroppedPointer
+			for i, path := range reports {
+				of, d, err := readDropped(path)
+				if err != nil {
+					return err
+				}
+				dropped = append(dropped, d)
+				// A report that is not its file's is not an error to the
+				// library: the lines are joined as without it. As in extract,
+				// with -o - and JSON stderr holds only the JSON report.
+				file := args[i+1]
+				if of != "" && of != outputName(stdio) && filepath.Base(of) != filepath.Base(file) && (out != stdio || format != formatJSON) {
+					fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s is the report of %s, not of %s: if it is another file's, the order is not restored\n", path, of, file)
+				}
 			}
 			docs := make([]*gedcom.Document, len(args))
 			for i, in := range args {
@@ -137,7 +204,7 @@ one UTF-8 file, combine writes it back exactly as it was read.
 				}
 				docs[i] = res.Document
 			}
-			doc, report, err := combineDocuments(args, docs, strategy, prefixes)
+			doc, report, err := combineDocuments(args, docs, name, prefixes, dropped)
 			if err != nil {
 				return err
 			}
@@ -174,13 +241,59 @@ one UTF-8 file, combine writes it back exactly as it was read.
 	addOutputFlag(cmd)
 	cmd.Flags().String("strategy", "", `how to join records the files share: "zip", "prefix" or "renumber" (required)`)
 	cmd.Flags().StringSlice("prefix", nil, "with --strategy prefix, the prefix for each file after the first, comma-separated or repeated")
+	cmd.Flags().StringSlice("dropped", nil, "with --strategy zip, the saved 'extract --format json' report of each file after the first, comma-separated or repeated")
 	return cmd
 }
 
-// combineDocuments joins docs in order with merge.Combine. A zip conflict does
-// not stop it: every input is compared, so the report names every conflict,
-// and the document returned must then not be written.
-func combineDocuments(files []string, docs []*gedcom.Document, strategy merge.CollisionStrategy, prefixes []string) (*gedcom.Document, combineReport, error) {
+// checkPrefixes refuses a --prefix that cannot start an xref, or that two
+// files would share.
+func checkPrefixes(prefixes []string) error {
+	for i, prefix := range prefixes {
+		switch {
+		case prefix == "" || strings.Contains(prefix, "@") || strings.ContainsFunc(prefix, unicode.IsSpace):
+			return usageError{fmt.Errorf(`invalid --prefix %q: must not be empty or contain "@" or whitespace`, prefix)}
+		case slices.Contains(prefixes[:i], prefix):
+			return usageError{fmt.Errorf("--prefix %q is given twice: each file needs its own", prefix)}
+		}
+	}
+	return nil
+}
+
+// readDropped reads a saved 'extract --format json' report: the file extract
+// wrote, and its "dropped" list as the library reported it.
+func readDropped(path string) (output string, dropped []gedcom.DroppedPointer, err error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, err
+	}
+	var report extractReport
+	if err := json.Unmarshal(b, &report); err != nil {
+		return "", nil, fmt.Errorf("%s: not an extract --format json report: %w", path, err)
+	}
+	// extract always writes the list, empty or not.
+	if report.Dropped == nil {
+		return "", nil, fmt.Errorf(`%s: not an extract --format json report: no "dropped" list`, path)
+	}
+	dropped = make([]gedcom.DroppedPointer, len(report.Dropped))
+	for i, d := range report.Dropped {
+		// Every restorable pointer has a position, so one without is from
+		// an extract that did not record them, and would order nothing.
+		if d.Restorable && d.Position == 0 {
+			return "", nil, fmt.Errorf(`%s: dropped pointer %s has no "position": run extract again to save a report that has one`, path, d)
+		}
+		dropped[i] = d.pointer()
+	}
+	return report.Output, dropped, nil
+}
+
+// combineDocuments joins docs in order with merge.Combine, under the strategy
+// named. With combinePrefix, each doc after the first is first renamed whole
+// with its prefix, by merge.RemapXRefs. dropped, when not nil, holds for
+// each doc after the first what extract reported dropping from it, which zip
+// uses to order the pointer lines it joins. A zip conflict does not stop it:
+// every input is compared, so the report names every conflict, and the
+// document returned must then not be written.
+func combineDocuments(files []string, docs []*gedcom.Document, name string, prefixes []string, dropped [][]gedcom.DroppedPointer) (*gedcom.Document, combineReport, error) {
 	report := combineReport{
 		Inputs:          make([]combineInput, len(docs)),
 		HeaderConflicts: []combineHeaderConflict{},
@@ -195,7 +308,7 @@ func combineDocuments(files []string, docs []*gedcom.Document, strategy merge.Co
 	out := docs[0]
 	for i := 1; i < len(docs); i++ {
 		opts := merge.CombineOptions{
-			CollisionStrategy: strategy,
+			CollisionStrategy: combineStrategies[name],
 			// Every input is decoded to Unicode and the output is UTF-8,
 			// so a declared encoding is provenance only.
 			IgnoreEncodingMismatch: true,
@@ -203,15 +316,30 @@ func combineDocuments(files []string, docs []*gedcom.Document, strategy merge.Co
 			// written when there is one.
 			KeepFirstOnConflict: true,
 		}
-		if strategy == merge.PrefixDoc2 {
-			opts.Prefix = prefixes[i-1]
+		if dropped != nil {
+			opts.Zip = &merge.ZipOptions{DroppedFromDoc2: dropped[i-1]}
 		}
-		combined, res, err := merge.Combine(out, docs[i], opts)
+		doc := docs[i]
+		// prefixed is what the prefix strategy renamed, before Combine;
+		// the other strategies rename, if at all, in Combine.
+		var prefixed map[string]string
+		if name == combinePrefix {
+			prefix := prefixes[i-1]
+			var err error
+			doc, prefixed, err = merge.RemapXRefs(doc, func(old string) string { return "@" + prefix + old[1:] })
+			if err != nil {
+				return nil, report, fmt.Errorf("combine %s: %w", files[i], err)
+			}
+		}
+		combined, res, err := merge.Combine(out, doc, opts)
 		if err != nil {
 			return nil, report, fmt.Errorf("combine %s: %w", files[i], err)
 		}
 		out = combined
 		report.Inputs[i].Remapped = res.RemappedXRefs
+		if prefixed != nil {
+			report.Inputs[i].Remapped = prefixed
+		}
 		for _, c := range res.HeaderConflicts {
 			if c.Field == "Encoding" {
 				continue // reported per input, and never written
