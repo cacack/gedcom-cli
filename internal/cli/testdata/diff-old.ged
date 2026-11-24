@@ -1,0 +1,30 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 DATE 1 JAN 2026
+2 TIME 10:00:00
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 SEX F
+1 BIRT
+2 DATE 3 MAR 1901
+2 PLAC Sampleton
+1 _HPID token-a
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Ben /Example/
+1 SEX M
+1 FAMS @F1@
+1 NOTE First line
+2 CONC  continued
+0 @I3@ INDI
+1 NAME Cora /Sample/
+1 SEX F
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 _USER token-1
+0 TRLR

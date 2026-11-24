@@ -30,7 +30,7 @@ This project is explicitly **not** trying to:
 - judge genealogical truth: no automatic merging of people, no heuristic "fix everything"
 - manage media files; it reports and edits the references inside the GEDCOM only
 - offer a second interface, such as an MCP server; the CLI is the interface
-- match other GEDCOM tools' query languages, HTML publishing or diff tooling feature for feature
+- match other GEDCOM tools' query languages, HTML publishing or diff tooling feature for feature; a record-level diff of two versions of a file is in scope, parity with other diff tools is not
 
 ## Success Criteria
 
