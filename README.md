@@ -218,9 +218,9 @@ warning (1)
 ```
 
 A family link only one record claims, such as a `FAMS` to a family that does
-not name the person as `HUSB` or `WIFE`, is a warning coded
-`UNRECIPROCATED_<tag>` after the pointer that is there, on the individual with
-the family as related xref.
+not name the person as `HUSB` or `WIFE`, is an `UNRECIPROCATED_<tag>` warning,
+where `<tag>` is the pointer that is there. It is reported on the individual,
+with the family as related xref.
 
 A file with nothing to report prints `family.ged: no findings`. The exit code
 is `1` whenever the file has an error-severity finding, with the report still

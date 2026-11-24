@@ -65,9 +65,9 @@ Findings are the library's, as reported. The decoder and the validator both
 report a duplicated xref, so DUPLICATE_XREF appears once per source. A family
 link only one record claims (a FAMS, FAMC, HUSB, WIFE or CHIL the other
 record does not point back to) is an UNRECIPROCATED_<tag> warning on the
-individual, with the family as related xref. Duplicate
-detection (POTENTIAL_DUPLICATE) is slow on large files and runs only with
---min-severity info.
+individual, with the family as related xref. Duplicate detection
+(POTENTIAL_DUPLICATE) is slow on large files and runs only with --min-severity
+info.
 
 With --redact-living, the whole file is still validated, but a finding about
 a presumed-living person, or a line in their record, reads Living instead of
