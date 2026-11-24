@@ -250,6 +250,20 @@ gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, 
 
 Xrefs are each file's own, so `@I1@` can be a different person on each side.
 
+The score sums what the two records agree on: surname, given name, birth year
+and sex make up 0.9, and a full birth date, death year and places the rest. A
+value one record lacks costs nothing; a contradiction (two different known
+sexes, exact birth or death years more than two apart) rules the pair out.
+`duplicates --help` lists the weights. Only people with the same surname are
+compared, unless `--relatives` is given: it adds spouses' names (0.2) and
+shared children's names (0.1 each, up to two) to the score, and compares people
+who share a spouse's name whatever their surnames, so a woman under her
+married name in one file and her maiden name in the other is found:
+
+```sh
+gedcom duplicates --relatives old-export.ged family.ged
+```
+
 `--groups` reports groups instead of pairs: the connected components of the
 pairs at the chosen `--min-score`, so a person held twice in each file is one
 group rather than four pairs. Each group lists its members' xrefs in each
