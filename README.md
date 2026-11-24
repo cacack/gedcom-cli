@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people` and `merge-families`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families` and `diff`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -194,6 +194,38 @@ In JSON each pair is `{"score", "a", "b"}`, with `a` and `b` in `list indi`'s
 keys. `--min-score` (default `0.7`) drops pairs whose printed score is lower. When the library
 skipped or shortened comparisons (very large surname groups, very long given
 names) a warning on stderr says so, and some pairs may be missing.
+
+`diff` compares two versions of the same tree, such as an earlier export and a
+re-download, record by record: records added, removed and changed, matched by
+xref and type. Each changed record is followed by its changed lines in GEDCOM
+form, grouped by the structure they belong to, with each line's number in its
+own file (`-` the old file, `+` the new):
+
+```sh
+gedcom diff old-export.ged family.ged
+gedcom diff --ignore-tag _USER --ignore-tag _HPID --ignore-tag _WPID old-export.ged family.ged
+gedcom diff --format json old-export.ged family.ged | jq '.changed[].xref'
+```
+
+```text
+added	@I4@	INDI
+removed	@I3@	INDI
+changed	@I1@	INDI
+  in INDI > BIRT
+  - line 13: 2 DATE 3 MAR 1901
+  + line 13: 2 DATE 4 MAR 1901
+```
+
+Only changes in meaning are reported: substructures reordered among siblings
+with other tags (`SEX` before `NAME`) and a value split differently across
+`CONT`/`CONC` lines are not changes; reordering siblings with the same tag
+(two `NAME`s, `CHIL` order) is. The header is left out unless
+`--include-header` is given, since its `DATE` and `TIME` change on every
+export. `--ignore-tag TAG` (repeatable) leaves a tag out wherever it appears,
+for vendor tokens that change between exports of an unchanged tree. Finding
+differences is not a failure: `diff` exits `0` either way, and prints
+`no differences` when there are none. In JSON, `added`, `removed` and
+`changed` are arrays and `header` is `null` unless compared and different.
 
 `media check` reports whether each `FILE` reference resolves to a file under a
 media folder: `ok`, `missing`, `url`, `absolute` (a rooted path) or `outside`
@@ -399,7 +431,8 @@ These hold for every command, so scripts and agents can rely on them:
   still readable. A family with a living spouse keeps only its spouses and
   children, and a note record a hidden person or family points to reads
   `Living`. `validate` still checks the whole file; a finding about a hidden
-  record reads `Living` instead of its message. Source, media, repository and
+  record reads `Living` instead of its message, and `diff` lists a changed
+  hidden record with its lines replaced by `Living`. Source, media, repository and
   submitter records are not redacted, even when a hidden record cites them:
   check their titles, file names and addresses yourself. Use it before pasting
   output into an issue, a forum post or a chat.
