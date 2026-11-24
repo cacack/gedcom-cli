@@ -175,6 +175,7 @@ func TestPutExitCodes(t *testing.T) {
 		{"records file not found", []string{"put", recordsFixture, "testdata/does-not-exist.ged", "-o", out}, ExitError},
 		{"input not found", []string{"put", "testdata/does-not-exist.ged", fragment, "-o", out}, ExitError},
 		{"not a fragment", []string{"put", recordsFixture, recordsFixture, "-o", out}, ExitError},
+		{"the header from get", []string{"put", recordsFixture, writeFragment(t, getRecord(t, recordsFixture, "HEAD")), "-o", out}, ExitError},
 		{"record without xref", []string{"put", recordsFixture, writeFragment(t, "0 NOTE loose\n"), "-o", out}, ExitError},
 	}
 	for _, tt := range tests {
