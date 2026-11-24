@@ -499,13 +499,18 @@ func TestMediaAddToStdout(t *testing.T) {
 	}
 }
 
-// An existing output is replaced through a temporary file, keeping its
-// permissions and leaving nothing else behind.
+// An existing output is replaced by renaming a temporary file over it, never
+// written in place: a hard link to the old file keeps the old bytes. The new
+// file keeps the old one's permissions, and nothing else is left behind.
 func TestMediaAddReplacesExistingOutput(t *testing.T) {
 	file, _ := mediaFixture(t, mediaGED)
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.ged")
 	if err := os.WriteFile(out, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link.ged")
+	if err := os.Link(out, link); err != nil {
 		t.Fatal(err)
 	}
 	code, _, stderr := run(t, "media", "add", file, "--to", "I2", "--path", "photos/cara.jpg", "-o", out)
@@ -514,6 +519,9 @@ func TestMediaAddReplacesExistingOutput(t *testing.T) {
 	}
 	if got := readFile(t, out); !strings.Contains(got, "1 FILE photos/cara.jpg") {
 		t.Errorf("output not replaced:\n%s", got)
+	}
+	if got := readFile(t, link); got != "old\n" {
+		t.Errorf("the old file was written in place: %q", got)
 	}
 	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("replaced file mode = %v, %v; want 0600", info.Mode().Perm(), err)
