@@ -43,7 +43,8 @@ type mergedPart struct {
 // record's substructure for the same event.
 type mergedFold struct {
 	Tag string `json:"tag"`
-	// Lines are drop's substructure as it was; Into is keep's after the fold.
+	// Lines are drop's substructure as it was; Into is keep's once every fold
+	// into it is done.
 	Lines []string `json:"lines"`
 	Into  []string `json:"into"`
 }
@@ -116,7 +117,7 @@ The report lists, one per line and tab-separated:
   folded        tag, lines, into
                               with --fold-events, a substructure of drop
                               folded into keep's for the same event; into is
-                              keep's after the fold
+                              keep's once every fold into it is done
   deduplicated  tag, lines    not moved, keep already held the same lines
   repointed     xref, path    a pointer that named drop and now names keep
   collapsed     xref, path    a pointer to drop removed as a repeat

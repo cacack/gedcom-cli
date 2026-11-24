@@ -243,6 +243,29 @@ func TestMergeFamiliesFoldEvents(t *testing.T) {
 	if want := "0 @F1@ FAM\n1 HUSB @I1@\n1 MARR\n2 DATE 5 MAY 2000\n2 PLAC Newtown\n"; code != ExitOK || stdout != want {
 		t.Errorf("get @F1@ = %q, want %q", stdout, want)
 	}
+
+	// JSON reports the same fold.
+	_, stdout = runMerge(t, "merge-families", in, "--fold-events", "--format", "json", "F1", "F2")
+	var got mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	marr := mergedFold{Tag: "MARR", Lines: []string{"1 MARR", "2 DATE 05 May 2000", "2 PLAC Newtown"}, Into: []string{"1 MARR", "2 DATE 5 MAY 2000", "2 PLAC Newtown"}}
+	if len(got.Folded) != 1 || !reflect.DeepEqual(got.Folded[0], marr) {
+		t.Errorf("folded = %+v, want [%+v]", got.Folded, marr)
+	}
+
+	// Two of drop's marriages fold into one of keep's: each into is keep's
+	// once both folds are done.
+	two := writeTemp(t, "fold-two.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n"+
+		"0 @F1@ FAM\n1 MARR\n2 DATE 5 MAY 2000\n"+
+		"0 @F2@ FAM\n1 MARR\n2 DATE 5 MAY 2000\n2 NOTE one\n1 MARR\n2 DATE 05 May 2000\n2 NOTE two\n0 TRLR\n")
+	_, stdout = runMerge(t, "merge-families", two, "--fold-events", "F1", "F2")
+	want = "folded\tMARR\t1 MARR | 2 DATE 5 MAY 2000 | 2 NOTE one\t1 MARR | 2 DATE 5 MAY 2000 | 2 NOTE one | 2 NOTE two\n" +
+		"folded\tMARR\t1 MARR | 2 DATE 05 May 2000 | 2 NOTE two\t1 MARR | 2 DATE 5 MAY 2000 | 2 NOTE one | 2 NOTE two\n"
+	if stdout != want {
+		t.Errorf("two folds, stdout:\n%s\nwant:\n%s", stdout, want)
+	}
 }
 
 func TestMergeFamilies(t *testing.T) {
