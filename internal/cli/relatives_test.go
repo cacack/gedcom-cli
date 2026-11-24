@@ -142,8 +142,8 @@ func TestRelativesErrors(t *testing.T) {
 	}{
 		{"unknown xref", []string{families, "@I99@"}, ExitError, "no such record: @I99@"},
 		{"not an individual", []string{families, "F1"}, ExitError, "@F1@ is a FAM record, not an individual"},
-		{"missing xref", []string{families}, ExitUsage, "accepts 2 arg(s)"},
-		{"too many xrefs", []string{families, "I1", "I2"}, ExitUsage, "accepts 2 arg(s)"},
+		{"missing xref", []string{families}, ExitUsage, "requires at least 2 arg(s)"},
+		{"unknown xref among several", []string{families, "I1", "@I99@"}, ExitError, "no such record: @I99@"},
 		{"missing file", []string{"testdata/does-not-exist.ged", "I1"}, ExitError, "does-not-exist.ged"},
 	}
 	for _, tt := range tests {
@@ -180,5 +180,112 @@ func TestRelativesRedactLiving(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Ann /Example/") {
 		t.Errorf("a deceased person's name is hidden:\n%s", stdout)
+	}
+}
+
+// relativesI2 is the text output for @I2@.
+const relativesI2 = "self\t\t@I2@\tBert /Example/\t1890\t\t\n" +
+	"spouse\t@F1@\t@I3@\tClara /Sample/\t\t\t\n" +
+	"spouse\t@F5@\t@I7@\tGwen /Sample/\t\t\t\n" +
+	"child\t@F1@\t@I1@\tAnn /Example/\t4 APR 1920\t1 JAN 1990\tbirth\n" +
+	"child\t@F1@\t@I4@\tDora /Example/\t1922\t\t\n" +
+	"child\t@F5@\t@I8@\tHal /Example/\t1930\t\t\n"
+
+// TestRelativesSeveral checks several xrefs in one call: each person's lines
+// in turn, in the order given, each person once.
+func TestRelativesSeveral(t *testing.T) {
+	code, stdout, stderr := run(t, "relatives", families, "I2", "@I1@", "I2", "I13")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	want := relativesI2 + relativesI1 + "self\t\t@I13@\tMoss /Example/\t\t\t\n"
+	if stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
+}
+
+// TestRelativesSeveralJSON checks that several people print as an array of
+// the single-person object, one per person.
+func TestRelativesSeveralJSON(t *testing.T) {
+	code, stdout, stderr := run(t, "relatives", "--format", "json", families, "I1", "I13")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []relativesReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array: %v\n%s", err, stdout)
+	}
+	if len(got) != 2 || got[0].Person.XRef != "@I1@" || got[1].Person.XRef != "@I13@" {
+		t.Fatalf("got %+v, want @I1@ then @I13@", got)
+	}
+	_, one, _ := run(t, "relatives", "--format", "json", families, "I1")
+	var single relativesReport
+	if err := json.Unmarshal([]byte(one), &single); err != nil {
+		t.Fatalf("single-xref output is not a JSON object: %v\n%s", err, one)
+	}
+	if !reflect.DeepEqual(got[0], single) {
+		t.Errorf("got[0] = %+v\nwant the single-xref object %+v", got[0], single)
+	}
+	if got[1].Relatives == nil || len(got[1].Relatives) != 0 {
+		t.Errorf("got[1].Relatives = %v, want []", got[1].Relatives)
+	}
+}
+
+// TestRelativesStdin checks "-": xrefs read from stdin, after any given, and
+// an array in JSON even for one xref.
+func TestRelativesStdin(t *testing.T) {
+	code, stdout, stderr := runStdin(t, "@I2@\nI13\n", "relatives", families, "I1", "-")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := relativesI1 + relativesI2 + "self\t\t@I13@\tMoss /Example/\t\t\t\n"; stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
+	code, stdout, stderr = runStdin(t, "I1\n", "relatives", "--format", "json", families, "-")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+	}
+	var got []relativesReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil || len(got) != 1 || got[0].Person.XRef != "@I1@" {
+		t.Errorf("json = %s, want an array holding @I1@ (err %v)", stdout, err)
+	}
+	for _, tt := range []struct {
+		name, stdin string
+		args        []string
+		code        int
+	}{
+		{"empty stdin", "", []string{"relatives", families, "-"}, ExitError},
+		{"stdin twice", "I1", []string{"relatives", families, "-", "-"}, ExitUsage},
+	} {
+		code, stdout, stderr := runStdin(t, tt.stdin, tt.args...)
+		if code != tt.code || stdout != "" || stderr == "" {
+			t.Errorf("%s: exit = %d (want %d), stdout = %q, stderr = %q", tt.name, code, tt.code, stdout, stderr)
+		}
+	}
+}
+
+// TestRelativesFromDuplicates is the composition from the help: the xrefs
+// duplicates finds in one file, piped into relatives for that file.
+func TestRelativesFromDuplicates(t *testing.T) {
+	code, stdout, stderr := run(t, "duplicates", "--groups", "--format", "json", duplicateGroupsA, duplicateGroupsB)
+	if code != ExitOK {
+		t.Fatalf("duplicates: exit = %d, stderr = %q", code, stderr)
+	}
+	var groups []duplicateGroup
+	if err := json.Unmarshal([]byte(stdout), &groups); err != nil {
+		t.Fatal(err)
+	}
+	// jq -r '.[1].b[]'
+	stdin := strings.Join(groups[1].B, "\n") + "\n"
+	code, stdout, stderr = runStdin(t, stdin, "relatives", "--format", "json", duplicateGroupsB, "-")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("relatives: exit = %d, stderr = %q", code, stderr)
+	}
+	var got []relativesReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Person.XRef != "@I1@" || got[1].Person.XRef != "@I3@" {
+		t.Errorf("got %+v, want the group's two Coras in B", got)
 	}
 }
