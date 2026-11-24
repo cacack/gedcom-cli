@@ -110,7 +110,8 @@ func TestWalkJSONEmpty(t *testing.T) {
 
 // oneWay is the shape of a real file: @I2@ has a FAMS link to @F2@, which
 // names @I3@ and @I4@, and @I6@ a FAMC link to @F2@, which does not name her
-// as a child.
+// as a child. From the family's side, @F1@ names @I7@ as a child, who has no
+// FAMC link back.
 const oneWay = "testdata/one-way.ged"
 
 // TestOneWayLinks checks that ancestors, descendants and relatives all ignore
@@ -126,6 +127,8 @@ func TestOneWayLinks(t *testing.T) {
 		{"ancestors, one-way FAMC", []string{"ancestors", oneWay, "I6"}, ""},
 		{"relatives, one-way FAMS", []string{"relatives", oneWay, "I2"}, "self\t\t@I2@\tChild /A/\t\t\t\nparent\t@F1@\t@I1@\tParent /A/\t\t\t\n"},
 		{"relatives, one-way FAMC", []string{"relatives", oneWay, "I6"}, "self\t\t@I6@\tStray /C/\t\t\t\n"},
+		{"ancestors, one-way CHIL", []string{"ancestors", oneWay, "I7"}, ""},
+		{"relatives, one-way CHIL", []string{"relatives", oneWay, "I1"}, "self\t\t@I1@\tParent /A/\t\t\t\nchild\t@F1@\t@I2@\tChild /A/\t\t\t\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
