@@ -203,8 +203,8 @@ carried to keep this way:
     CHAN, and the others the file's GEDCOM version allows once) is carried
     when keep has none, deduplicated when keep's is the same, and otherwise
     not carried: keep's stays, and drop's is reported as dropped
-  - every other line (NOTE, OBJE, REFN, REPO, vendor tags such as _APID) is
-    carried, unless keep already holds the same lines
+  - every other line (NOTE, OBJE, REFN, vendor tags such as _APID, and REPO
+    except in GEDCOM 5.5) is carried, unless keep already holds the same lines
 
 The report lists, one per line and tab-separated:
 

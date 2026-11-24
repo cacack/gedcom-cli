@@ -418,6 +418,12 @@ func TestMergeHelp(t *testing.T) {
 			t.Errorf("merge-sources --help lacks %q", want)
 		}
 	}
+	_, stdout, _ = run(t, "merge-repositories", "--help")
+	for _, want := range []string{"is carried", "reported as dropped", "collapsed     xref, path"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("merge-repositories --help lacks %q", want)
+		}
+	}
 }
 
 // sourcesFixture holds one parish register as @S1@ and @S2@, cited by Ada
