@@ -39,6 +39,16 @@ type mergedPart struct {
 	Conflict bool `json:"conflict,omitempty"`
 }
 
+// mergedFold is one substructure of the dropped record folded into the kept
+// record's substructure for the same event.
+type mergedFold struct {
+	Tag string `json:"tag"`
+	// Lines are drop's substructure as it was; Into is keep's once every fold
+	// into it is done.
+	Lines []string `json:"lines"`
+	Into  []string `json:"into"`
+}
+
 // mergeRef is one pointer that named the dropped record.
 type mergeRef struct {
 	XRef string `json:"xref"`
@@ -56,6 +66,7 @@ type mergeReport struct {
 	Keep         string       `json:"keep"`
 	Drop         string       `json:"drop"`
 	Moved        []mergedPart `json:"moved"`
+	Folded       []mergedFold `json:"folded"`
 	Deduplicated []mergedPart `json:"deduplicated"`
 	Repointed    []mergeRef   `json:"repointed"`
 	Collapsed    []mergeRef   `json:"collapsed"`
@@ -79,6 +90,23 @@ keep, and one that would then repeat a line beside it (a family listing both
 as children) is removed; drop is removed. Records not involved are written
 exactly as they were read.
 
+With --fold-events, a substructure of drop that records the same event as
+one of keep's is folded into it instead of moved beside it: keep's lines
+stay, and each line of drop's that keep's lacks (a citation, a note, a place
+keep's has none of) is added. Two substructures record the same event, as
+gedcom-go decides it, when they have the same tag and value, each has
+exactly one DATE and at most one PLAC and one TYPE, and:
+
+  - the dates parse to the same date: "7 DEC 1977" and "07 Dec 1977" are
+    the same, "ABT 1977" and "1977" are not; a date that does not parse, is
+    invalid ("32 DEC 1977") or is a phrase is the same as none
+  - a TIME or PHRASE under both DATEs is equal
+  - the places are equal, or only one has a place
+  - the TYPEs are equal, or neither has one
+
+Events that differ in any of these are moved and reported as conflicts:
+choosing between them is yours.
+
 The report lists, one per line and tab-separated:
 
   moved         tag, lines    a substructure of drop now under keep
@@ -86,6 +114,10 @@ The report lists, one per line and tab-separated:
                               other lines and a value that is not a pointer:
                               one fact stated two ways (two births) or two
                               facts (two occupations); check which
+  folded        tag, lines, into
+                              with --fold-events, a substructure of drop
+                              folded into keep's for the same event; into is
+                              keep's once every fold into it is done
   deduplicated  tag, lines    not moved, keep already held the same lines
   repointed     xref, path    a pointer that named drop and now names keep
   collapsed     xref, path    a pointer to drop removed as a repeat
@@ -99,6 +131,7 @@ redacted.
 
 Run 'gedcom validate' on the output to check the result.`,
 		Example: `  gedcom merge-people family.ged @I1@ @I7@ -o merged.ged
+  gedcom merge-people --fold-events family.ged @I1@ @I7@ -o merged.ged
   gedcom merge-people --format json family.ged I1 I7 -o merged.ged | jq '.moved[] | select(.conflict)'
   gedcom merge-families merged.ged @F1@ @F4@ -o merged2.ged`,
 	})
@@ -119,7 +152,11 @@ drop (the spouses' FAMS, the children's FAMC) is rewritten to name keep, and
 one that would then repeat a line beside it is removed; drop is removed.
 Records not involved are written exactly as they were read.
 
-The report is merge-people's, without candidates: moved, conflict,
+With --fold-events, an event of drop (a marriage, say) that records the same
+event as one of keep's is folded into it, by the rule merge-people's help
+gives.
+
+The report is merge-people's, without candidates: moved, conflict, folded,
 deduplicated, repointed and collapsed lines. A HUSB or WIFE that differs from
 keep's is moved, and reported as a conflict. Run 'gedcom validate' on the
 output to check the result.`,
@@ -165,7 +202,8 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 			}
 		}
 
-		merged, libReport, err := kind.merge(doc, keep.XRef, drop.XRef, merge.RecordMergeOptions{})
+		fold, _ := cmd.Flags().GetBool("fold-events")
+		merged, libReport, err := kind.merge(doc, keep.XRef, drop.XRef, merge.RecordMergeOptions{FoldEvents: fold})
 		if err != nil {
 			return err
 		}
@@ -186,6 +224,7 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 		return writeMergeText(w, report)
 	}
 	addOutputFlag(cmd)
+	cmd.Flags().Bool("fold-events", false, "fold an event of drop into keep's record of the same event, instead of adding it beside it")
 	return cmd
 }
 
@@ -204,6 +243,7 @@ func newMergeReport(doc *gedcom.Document, kind mergeKind, keep *gedcom.Record, r
 		Keep:         r.Keep,
 		Drop:         r.Drop,
 		Moved:        make([]mergedPart, 0, len(r.Moved)),
+		Folded:       make([]mergedFold, 0, len(r.Folded)),
 		Deduplicated: make([]mergedPart, 0, len(r.Deduplicated)),
 		Repointed:    mergeRefs(r.Repointed),
 		Collapsed:    mergeRefs(r.Collapsed),
@@ -213,6 +253,13 @@ func newMergeReport(doc *gedcom.Document, kind mergeKind, keep *gedcom.Record, r
 		first := s.Tags[0]
 		part.Conflict = held[first.Tag] && (!doc.IsPointerXRef(first.Value) || kind.onePointer[first.Tag])
 		report.Moved = append(report.Moved, part)
+	}
+	for _, f := range r.Folded {
+		report.Folded = append(report.Folded, mergedFold{
+			Tag:   f.Drop.Tags[0].Tag,
+			Lines: newMergedPart(f.Drop, redact).Lines,
+			Into:  newMergedPart(f.Into, redact).Lines,
+		})
 	}
 	for _, s := range r.Deduplicated {
 		report.Deduplicated = append(report.Deduplicated, newMergedPart(s, redact))
@@ -294,6 +341,9 @@ func writeMergeText(w io.Writer, r *mergeReport) error {
 			kind = "conflict"
 		}
 		lines = append(lines, kind+"\t"+p.Tag+"\t"+strings.Join(p.Lines, " | "))
+	}
+	for _, f := range r.Folded {
+		lines = append(lines, "folded\t"+f.Tag+"\t"+strings.Join(f.Lines, " | ")+"\t"+strings.Join(f.Into, " | "))
 	}
 	for _, p := range r.Deduplicated {
 		lines = append(lines, "deduplicated\t"+p.Tag+"\t"+strings.Join(p.Lines, " | "))

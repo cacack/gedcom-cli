@@ -161,6 +161,113 @@ func TestMergePeopleRepeatableConflict(t *testing.T) {
 	}
 }
 
+// foldFixture holds Ida twice. Both births are 7 Dec 1977, written two ways,
+// with a place in one and a citation in each; the christenings differ in
+// date.
+const foldFixture = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n" +
+	"1 SUBM @U1@\n0 @U1@ SUBM\n1 NAME Test Submitter\n" +
+	"0 @I1@ INDI\n1 NAME Ida /Example/\n1 SEX F\n1 BIRT\n2 DATE 7 DEC 1977\n2 PLAC Oldtown\n2 SOUR @S1@\n1 CHR\n2 DATE 1 JAN 1978\n" +
+	"0 @I2@ INDI\n1 NAME Ida /Example/\n1 SEX F\n1 BIRT\n2 DATE 07 Dec 1977\n2 SOUR @S2@\n2 NOTE Baptism register\n1 CHR\n2 DATE 8 JAN 1978\n" +
+	"0 @S1@ SOUR\n1 TITL Example civil register\n0 @S2@ SOUR\n1 TITL Example parish register\n0 TRLR\n"
+
+// TestMergePeopleFoldEvents covers --fold-events: a birth on the same date
+// written differently folds into one BIRT holding both citations and the
+// note, the report lists it, and christenings on different dates are both
+// kept and reported as a conflict.
+func TestMergePeopleFoldEvents(t *testing.T) {
+	in := writeTemp(t, "fold.ged", foldFixture)
+	out, stdout := runMerge(t, "merge-people", in, "--fold-events", "I1", "I2")
+	want := "conflict\tCHR\t1 CHR | 2 DATE 8 JAN 1978\n" +
+		"folded\tBIRT\t1 BIRT | 2 DATE 07 Dec 1977 | 2 SOUR @S2@ | 2 NOTE Baptism register\t" +
+		"1 BIRT | 2 DATE 7 DEC 1977 | 2 PLAC Oldtown | 2 SOUR @S1@ | 2 SOUR @S2@ | 2 NOTE Baptism register\n" +
+		"deduplicated\tNAME\t1 NAME Ida /Example/\n" +
+		"deduplicated\tSEX\t1 SEX F\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+	assertValid(t, out)
+	code, stdout, _ := run(t, "get", out, "@I1@")
+	wantI1 := "0 @I1@ INDI\n1 NAME Ida /Example/\n1 SEX F\n" +
+		"1 BIRT\n2 DATE 7 DEC 1977\n2 PLAC Oldtown\n2 SOUR @S1@\n2 SOUR @S2@\n2 NOTE Baptism register\n" +
+		"1 CHR\n2 DATE 1 JAN 1978\n1 CHR\n2 DATE 8 JAN 1978\n"
+	if code != ExitOK || stdout != wantI1 {
+		t.Errorf("get @I1@ = %q, want %q", stdout, wantI1)
+	}
+
+	_, stdout = runMerge(t, "merge-people", in, "--fold-events", "--format", "json", "I1", "I2")
+	var got mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	wantFolded := []mergedFold{{
+		Tag:   "BIRT",
+		Lines: []string{"1 BIRT", "2 DATE 07 Dec 1977", "2 SOUR @S2@", "2 NOTE Baptism register"},
+		Into:  []string{"1 BIRT", "2 DATE 7 DEC 1977", "2 PLAC Oldtown", "2 SOUR @S1@", "2 SOUR @S2@", "2 NOTE Baptism register"},
+	}}
+	if !reflect.DeepEqual(got.Folded, wantFolded) {
+		t.Errorf("folded = %+v, want %+v", got.Folded, wantFolded)
+	}
+	if wantMoved := []mergedPart{{Tag: "CHR", Lines: []string{"1 CHR", "2 DATE 8 JAN 1978"}, Conflict: true}}; !reflect.DeepEqual(got.Moved, wantMoved) {
+		t.Errorf("moved = %+v, want %+v", got.Moved, wantMoved)
+	}
+
+	// Without the flag nothing folds: both births are kept, and the report's
+	// folded list is empty, not missing.
+	_, stdout = runMerge(t, "merge-people", in, "--format", "json", "I1", "I2")
+	if !strings.Contains(stdout, "\"folded\": []") || !strings.Contains(stdout, "\"2 DATE 07 Dec 1977\"") {
+		t.Errorf("without --fold-events, the report should move the birth and fold nothing:\n%s", stdout)
+	}
+
+	// Ida is presumed living, so --redact-living hides the folded lines.
+	code, stdout, stderr := run(t, "--redact-living", "--reference-year", referenceYear, "merge-people", "--fold-events", in, "I1", "I2", "-o", filepath.Join(t.TempDir(), "out.ged"))
+	if code != ExitOK || !strings.Contains(stdout, "folded\tBIRT\tLiving\tLiving\n") || strings.Contains(stdout, "Oldtown") || strings.Contains(stdout, "1977") {
+		t.Errorf("redacted: exit = %d, stderr = %q, stdout:\n%s", code, stderr, stdout)
+	}
+}
+
+// TestMergeFamiliesFoldEvents folds a marriage on the same date, written two
+// ways, the place only drop's has joining keep's.
+func TestMergeFamiliesFoldEvents(t *testing.T) {
+	in := writeTemp(t, "fold-fam.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n"+
+		"0 @I1@ INDI\n1 NAME Hal /Example/\n1 SEX M\n1 FAMS @F1@\n1 FAMS @F2@\n"+
+		"0 @F1@ FAM\n1 HUSB @I1@\n1 MARR\n2 DATE 5 MAY 2000\n"+
+		"0 @F2@ FAM\n1 HUSB @I1@\n1 MARR\n2 DATE 05 May 2000\n2 PLAC Newtown\n0 TRLR\n")
+	out, stdout := runMerge(t, "merge-families", in, "--fold-events", "F1", "F2")
+	want := "folded\tMARR\t1 MARR | 2 DATE 05 May 2000 | 2 PLAC Newtown\t1 MARR | 2 DATE 5 MAY 2000 | 2 PLAC Newtown\n" +
+		"deduplicated\tHUSB\t1 HUSB @I1@\n" +
+		"collapsed\t@I1@\tINDI.FAMS\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+	code, stdout, _ := run(t, "get", out, "@F1@")
+	if want := "0 @F1@ FAM\n1 HUSB @I1@\n1 MARR\n2 DATE 5 MAY 2000\n2 PLAC Newtown\n"; code != ExitOK || stdout != want {
+		t.Errorf("get @F1@ = %q, want %q", stdout, want)
+	}
+
+	// JSON reports the same fold.
+	_, stdout = runMerge(t, "merge-families", in, "--fold-events", "--format", "json", "F1", "F2")
+	var got mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	marr := mergedFold{Tag: "MARR", Lines: []string{"1 MARR", "2 DATE 05 May 2000", "2 PLAC Newtown"}, Into: []string{"1 MARR", "2 DATE 5 MAY 2000", "2 PLAC Newtown"}}
+	if len(got.Folded) != 1 || !reflect.DeepEqual(got.Folded[0], marr) {
+		t.Errorf("folded = %+v, want [%+v]", got.Folded, marr)
+	}
+
+	// Two of drop's marriages fold into one of keep's: each into is keep's
+	// once both folds are done.
+	two := writeTemp(t, "fold-two.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n"+
+		"0 @F1@ FAM\n1 MARR\n2 DATE 5 MAY 2000\n"+
+		"0 @F2@ FAM\n1 MARR\n2 DATE 5 MAY 2000\n2 NOTE one\n1 MARR\n2 DATE 05 May 2000\n2 NOTE two\n0 TRLR\n")
+	_, stdout = runMerge(t, "merge-families", two, "--fold-events", "F1", "F2")
+	want = "folded\tMARR\t1 MARR | 2 DATE 5 MAY 2000 | 2 NOTE one\t1 MARR | 2 DATE 5 MAY 2000 | 2 NOTE one | 2 NOTE two\n" +
+		"folded\tMARR\t1 MARR | 2 DATE 05 May 2000 | 2 NOTE two\t1 MARR | 2 DATE 5 MAY 2000 | 2 NOTE one | 2 NOTE two\n"
+	if stdout != want {
+		t.Errorf("two folds, stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+}
+
 func TestMergeFamilies(t *testing.T) {
 	people, _ := runMerge(t, "merge-people", mergeFixture, "I1", "I2")
 	out, stdout := runMerge(t, "merge-families", people, "F1", "F2")
