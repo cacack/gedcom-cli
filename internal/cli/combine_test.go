@@ -307,13 +307,19 @@ func TestCombineZipJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
+	// The second branch's header is the first's, and is dropped whole: each
+	// structure is listed, but none differs.
+	var headerConflicts []combineHeaderConflict
+	for _, tag := range []string{"SOUR", "GEDC", "CHAR", "SUBM"} {
+		headerConflicts = append(headerConflicts, combineHeaderConflict{File: branches[1], Field: "Tags." + tag, Kept: "kept", Dropped: "dropped (KeepFirstHeader keeps doc1's header alone)"})
+	}
 	want := combineReport{
 		Output: out, Strategy: "zip", Records: 15, Individuals: 8, Families: 3,
 		Inputs: []combineInput{
 			{File: branches[0], Encoding: "UTF-8", Remapped: map[string]string{}},
 			{File: branches[1], Encoding: "UTF-8", Remapped: map[string]string{}},
 		},
-		HeaderConflicts: []combineHeaderConflict{},
+		HeaderConflicts: headerConflicts,
 		Conflicts:       []combineConflict{},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -412,8 +418,10 @@ func TestCombinePrefix(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "all.ged")
 	code, stdout, stderr := run(t, "combine", "--strategy", "prefix", "--prefix", "B_,C_", sample, sample, combineFixture, "-o", out)
-	if code != ExitOK || stderr != "" {
-		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	// Each later file's header points at its own, now prefixed, submitter,
+	// a value the first file's header does not carry.
+	if want := "gedcom: warning: 2 differing header values from later files dropped (see --format json)\n"; code != ExitOK || stderr != want {
+		t.Fatalf("exit = %d, stderr = %q, want %q", code, stderr, want)
 	}
 	// minimal holds 4 records, combine 15; every one is kept, and every one
 	// of a later file is a line of the report.
@@ -549,6 +557,48 @@ func TestCombineEncodings(t *testing.T) {
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Errorf("output was written: %v", err)
+	}
+}
+
+// TestCombineHeader holds that the output header is the first file's alone,
+// under every strategy: a later file's header lines, those the first file
+// lacks included, are not written but listed in header_conflicts.
+func TestCombineHeader(t *testing.T) {
+	later := writeTemp(t, "later.ged", "0 HEAD\n1 SOUR other-test\n1 DEST GEDCOM 5.5\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n"+
+		"1 CHAR UTF-8\n1 NOTE written by another program\n1 _X vendor\n0 @I9@ INDI\n0 TRLR\n")
+	header := func(path string) string {
+		text := readText(t, path)
+		return text[:strings.Index(text, "\n0 ")+1]
+	}
+	want := header(sample)
+	for _, strategy := range [][]string{{"zip"}, {"prefix", "--prefix", "B_"}, {"renumber"}} {
+		out := filepath.Join(t.TempDir(), "both.ged")
+		args := append([]string{"combine", "--format", "json", sample, later, "-o", out, "--strategy"}, strategy...)
+		code, stdout, stderr := run(t, args...)
+		if code != ExitOK || stderr != "" {
+			t.Fatalf("%s: exit = %d, stderr = %q", strategy[0], code, stderr)
+		}
+		if got := header(out); got != want {
+			t.Errorf("%s: header =\n%s\nwant the first file's:\n%s", strategy[0], got, want)
+		}
+		var got combineReport
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("%s: stdout is not JSON: %v\n%s", strategy[0], err, stdout)
+		}
+		var fields []string
+		for _, c := range got.HeaderConflicts {
+			fields = append(fields, c.Field)
+		}
+		for _, field := range []string{"SourceSystem", "Tags.DEST", "Tags.GEDC", "Tags.NOTE", "Tags._X"} {
+			if !slices.Contains(fields, field) {
+				t.Errorf("%s: header conflicts %v lack %s", strategy[0], fields, field)
+			}
+		}
+	}
+
+	code, _, stderr := run(t, "combine", "--strategy", "renumber", sample, later, "-o", filepath.Join(t.TempDir(), "text.ged"))
+	if want := "gedcom: warning: 4 differing header values from later files dropped (see --format json)\n"; code != ExitOK || stderr != want {
+		t.Errorf("text: exit = %d, stderr = %q, want %q", code, stderr, want)
 	}
 }
 
