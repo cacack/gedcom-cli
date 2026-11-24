@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates` and `extract`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put` and `delete`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -172,90 +172,54 @@ report a duplicated xref, so `DUPLICATE_XREF` appears once per source.
 Duplicate detection (`POTENTIAL_DUPLICATE`) is slow on large files and runs
 only with `--min-severity info`.
 
-`duplicates` reports people in one file who may be the same as people in
-another, for reconciling overlapping trees. Each line is a candidate pair: the
-score (0 to 1, from gedcom-go's duplicate detection), then xref, name, birth
-and death from the first file, then the same from the second. Pairs are
-candidates for review, not conclusions; nothing is merged or written:
+`put` and `delete` correct a file. They never write to the input: `-o` names
+the new file (required, and not an input), or `-o -` writes it to stdout.
+Every line they were not asked to change is written exactly as it was read.
+A refused write prints the report (with `--format json`, as JSON) and exits
+`1`; a failure before there is a report (an unreadable file, an unknown xref)
+prints only the error on stderr.
+
+`put` takes a file of level-0 records, with no header, as `get` prints them
+(`-` reads it from stdin). Each record replaces the one with the same xref, in
+its place, or is appended when the xref is new. `get`, edit, `put` is the edit
+loop:
 
 ```sh
-gedcom duplicates old-export.ged family.ged
-gedcom duplicates --min-score 0.9 old-export.ged family.ged
-gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, .b.xref]'
+gedcom get family.ged @I1@ > i1.ged
+$EDITOR i1.ged
+gedcom put family.ged i1.ged -o family-edited.ged
 ```
 
 ```text
-0.90	@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978	@I7@	Ada /Example/	1901
-0.70	@I2@	Ben /Example/	21 JUL 1899		@I1@	Ben /Example/
+wrote family-edited.ged: 1 replaced, 0 added, 0 unchanged
+  replaced	@I1@
 ```
 
-Xrefs are each file's own, so `@I1@` can be a different person on each side.
-In JSON each pair is `{"score", "a", "b"}`, with `a` and `b` in `list indi`'s
-keys. `--min-score` (default `0.7`) drops pairs whose printed score is lower. When the library
-skipped or shortened comparisons (very large surname groups, very long given
-names) a warning on stderr says so, and some pairs may be missing.
+A record put back unedited is left as it was, so the output is byte-identical.
+A replaced record is written as its new lines, without the old record's
+indentation or the blank lines before it. What the decoder could not read
+cleanly in the records file is reported as `validate` reports it; when any of
+it is an error, nothing is written and the exit code is `1`. Pointers are not
+checked: a put record may point at an xref the file lacks, or replace a record
+with one of another type, so run `validate` on the output.
 
-`media check` reports whether each `FILE` reference resolves to a file under a
-media folder: `ok`, `missing`, `url`, `absolute` (a rooted path) or `outside`
-(a relative path that climbs out of the folder); the last two are not
-resolved. It exits `1` when any reference is missing. `--unreferenced` also
-lists the files in the folder that nothing references. The media files are
-only looked at, never changed:
+`delete` removes records by xref. While other records still point at them, it
+writes nothing, lists each pointer (the record holding it, the tag path to it,
+the record it points at; `-` is the header, `"from": ""` in JSON) and exits
+`1`. `--force` deletes anyway and reports the pointers as dangling:
 
 ```sh
-gedcom media check --root media family.ged
-gedcom media check --root media --unreferenced --format json family.ged
+gedcom delete family.ged @I2@ -o family-edited.ged
 ```
 
 ```text
-ok	@O1@	line 812	photos/ada.jpg
-missing	@O2@	line 815	photos/ben.jpg
-url	@I4@	line 97	https://example.com/census.jpg
-unreferenced			photos/cara.jpg
+family-edited.ged not written: pointers left to @I2@
+references (1)
+  @F1@	FAM.HUSB	@I2@
 ```
 
-`media add` links a file from an individual, family or source, reusing the
-`OBJE` record with that path or creating one, and writes the result to a new
-file. Running it again changes nothing. `--root` checks that the path names a
-file in the media folder. `--batch` takes a tab-separated file of rows
-(xref, path, optional title) and applies all of them or, if any row fails,
-none:
-
-```sh
-gedcom media add family.ged --to @I1@ --path photos/ada.jpg --title "Ada, 1920" -o out.ged
-gedcom media add family.ged --root media --batch links.tsv -o out.ged
-```
-
-`extract` writes a branch of the tree to its own file: the individuals given,
-every family one of them is a member of, and the sources, notes, media,
-repositories and submitters those records cite. Other individuals are not
-pulled in. `-` reads xrefs from stdin, one word each, so feed it the `xref`
-column of `ancestors`, `descendants` or `list` JSON through `jq` (their text
-output carries names too):
-
-```sh
-gedcom extract tree.ged @I1@ @I2@ -o couple.ged
-gedcom descendants --format json tree.ged I1 | jq -r '.[].xref' | gedcom extract tree.ged - -o branch.ged
-gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
-```
-
-```text
-gedcom: warning: dropped pointer @F3@ HUSB @I7@ (restorable)
-gedcom: warning: dropped pointer @F3@ WIFE @I8@ (restorable)
-wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped
-```
-
-A pointer to an individual or family left out (a family's `HUSB` for a
-parent not extracted) is removed, so the output has no dangling pointers. Each
-one is a warning on stderr and an entry in the JSON report's `dropped`, marked
-restorable when combining the file with another cut from the same master that
-holds the target is sure to put it back. Records keep their xrefs and every
-kept line is written as it was read. The output carries the input's header and
-submitter, contact details included, unless `--strip-submitter` replaces each
-submitter record with one named `Submitter`; the header itself is copied as
-read even then, so check its source and corporation lines before sharing.
-`--redact-living` applies to the file written. `-o` may not name the input;
-`-o -` writes the GEDCOM to stdout and the report to stderr.
+An xref the file defines more than once is refused, since `delete` could not
+tell those records apart.
 
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
@@ -263,32 +227,7 @@ Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 These hold for every command, so scripts and agents can rely on them:
 
-- **Results go to stdout, diagnostics to stderr.** Stderr is empty on
-  success, except for a warning that a result is incomplete (`duplicates`)
-  or that a pointer was dropped (`extract`). A write command given `-o -`
-  puts the file on stdout and its report on stderr; with `--format json`
-  stderr then holds only that JSON report.
-- **`--format json`** gives machine-readable output; the default is text.
-- **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
-  error) or `validate` found errors, `2` the command line was wrong.
-- **Input files are never modified.** A command that writes a file takes it
-  as `-o`, which may not name an input, and replaces an existing file only
-  once the whole output is written, keeping that file's permissions.
-- **`--redact-living`** replaces what the output says about a person presumed
-  living with `Living`: name, dates, places, notes, addresses, and in `get`
-  their raw lines. The xref, sex and family links stay, so the structure is
-  still readable. A family with a living spouse keeps only its spouses and
-  children, and a note record a hidden person or family points to reads
-  `Living`. `validate` still checks the whole file; a finding about a hidden
-  record reads `Living` instead of its message. Source, media, repository and
-  submitter records are not redacted, even when a hidden record cites them:
-  check their titles, file names and addresses yourself. Use it before pasting
-  output into an issue, a forum post or a chat.
-- **Who is presumed living** is gedcom-go's rule: no death, burial or
-  cremation, and no date of the person's, of a family they are a spouse in or
-  of their children, more than `--living-years` (default 110) before
-  `--reference-year` (default `0`, the current year). A person with no dates
-  at all is presumed living. Fix `--reference-year` for reproducible output.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put` and `delete`. Flags and JSON output may change until v1.0.
 
 ## Development
 
