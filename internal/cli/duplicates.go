@@ -58,9 +58,9 @@ agree on. Surname 0.3; given name up to 0.3, by similarity; birth year 0.2,
 or 0.1 within two years; sex 0.1, also when either side has none; full birth
 date 0.04; death year 0.03; birth place 0.02; death place 0.01. Sex aside,
 a value one record lacks earns nothing, just as when both lack it. Nothing
-is subtracted: two different known sexes, or exact birth or death years more
-than two apart, rule a pair out instead. By default only people with the same
-surname are compared.
+is subtracted: two different known sexes, exact birth or death years more than
+two apart, or given names less than 80% alike rule a pair out instead. By
+default only people with the same surname are compared.
 
 --relatives adds the people's relatives, read through the families they are a
 spouse in: a spouse's name on both sides adds 0.2 and each child's name both
@@ -72,7 +72,8 @@ without the surname's weight.
 Pairs are sorted by score, highest first, then by file order in A and in B.
 The score is rounded to two decimals; --min-score drops pairs whose rounded
 score is below it. The library bounds its work on large surname groups and long
-given names; when it skipped or shortened any comparison, a warning on stderr
+given names, and under --relatives on large spouse-name groups and on the
+relatives it reads; when it skipped or shortened any comparison, a warning on stderr
 says so, and some pairs may be missing.
 
 --groups reports groups instead of pairs: the connected components of the
