@@ -102,6 +102,9 @@ func withType(recordType gedcom.RecordType, entity any) (json.RawMessage, error)
 	if err != nil {
 		return nil, err
 	}
+	if len(object) < 2 || object[0] != '{' {
+		return nil, fmt.Errorf("%s entity is not a JSON object: %s", recordType, object)
+	}
 	typeJSON, err := json.Marshal(recordType)
 	if err != nil {
 		return nil, err
