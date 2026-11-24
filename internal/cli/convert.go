@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -160,35 +159,6 @@ func convertFile(in, out string, to gedcom.Version, failOnLoss bool) (*convertRe
 	}
 	report.Written = true
 	return report, nil
-}
-
-// writeFileAtomic writes path through a temporary file in the same directory,
-// renamed over path only once write and the sync succeed, so a failure leaves
-// no partial file and an existing file at path untouched.
-func writeFileAtomic(path string, write func(io.Writer) error) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if err = write(tmp); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err = tmp.Chmod(0o644); err != nil {
-		return err
-	}
-	if err = tmp.Sync(); err != nil {
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }
 
 func newConvertReport(in, out string, r *gedcom.ConversionReport) *convertReport {
