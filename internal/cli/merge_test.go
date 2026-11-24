@@ -268,7 +268,7 @@ func TestMergeUsage(t *testing.T) {
 		{"family to merge-people", []string{"merge-people", mergeFixture, "I1", "F1", "-o", out}, ExitError, "@F1@ is a FAM record; want an individual"},
 		{"person to merge-families", []string{"merge-families", mergeFixture, "I1", "F1", "-o", out}, ExitError, "@I1@ is a INDI record; want a family"},
 		{"missing family", []string{"merge-families", mergeFixture, "F9", "F1", "-o", out}, ExitError, "no such record: @F9@"},
-		{"no output", []string{"merge-people", mergeFixture, "I1", "I2"}, ExitUsage, "--output is required"},
+		{"no output", []string{"merge-people", mergeFixture, "I1", "I2"}, ExitUsage, "--output (-o) is required"},
 		{"output is input", []string{"merge-people", mergeFixture, "I1", "I2", "-o", mergeFixture}, ExitUsage, "is the input file"},
 		{"too few arguments", []string{"merge-families", mergeFixture, "F1", "-o", out}, ExitUsage, "accepts 3 arg(s)"},
 		{"missing file", []string{"merge-people", "testdata/does-not-exist.ged", "I1", "I2", "-o", out}, ExitError, "does-not-exist.ged"},
@@ -295,5 +295,23 @@ func TestMergeHelp(t *testing.T) {
 		if code != ExitOK || !strings.Contains(stdout, "gedcom "+cmd+" family.ged @") {
 			t.Errorf("%s --help: exit = %d, lacks an example:\n%s", cmd, code, stdout)
 		}
+	}
+}
+
+// TestMergeToStdout checks that -o - writes the merged file to stdout and the
+// report to stderr, as the other write commands do.
+func TestMergeToStdout(t *testing.T) {
+	code, stdout, stderr := run(t, "merge-people", mergeFixture, "I1", "I2", "-o", "-")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "0 HEAD") || !strings.Contains(stdout, "0 TRLR") {
+		t.Errorf("stdout is not a GEDCOM file:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "0 @I2@ INDI") {
+		t.Errorf("the dropped record is still in the output")
+	}
+	if stderr == "" {
+		t.Errorf("the report is not on stderr")
 	}
 }

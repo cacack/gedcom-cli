@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -144,11 +141,8 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		out, _ := cmd.Flags().GetString("output")
-		if out == "" {
-			return usageError{errors.New("--output is required")}
-		}
-		if err := checkNotInput(args[0], out); err != nil {
+		out, err := outputPath(cmd, args[0])
+		if err != nil {
 			return err
 		}
 
@@ -182,19 +176,16 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 			report.Candidates = &candidates
 		}
 
-		var buf bytes.Buffer
-		if err := encodeDocument(&buf, merged); err != nil {
+		if err := writeOutput(cmd, out, merged); err != nil {
 			return err
 		}
-		if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
-			return err
-		}
+		w := reportWriter(cmd, out)
 		if format == formatJSON {
-			return writeJSON(cmd.OutOrStdout(), report)
+			return writeJSON(w, report)
 		}
-		return writeMergeText(cmd.OutOrStdout(), report)
+		return writeMergeText(w, report)
 	}
-	cmd.Flags().StringP("output", "o", "", "file to write the result to (required; never the input)")
+	addOutputFlag(cmd)
 	return cmd
 }
 
