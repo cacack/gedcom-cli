@@ -103,15 +103,15 @@ func TestExtractJSON(t *testing.T) {
 	want := extractReport{
 		Output: out, Records: 9, Individuals: 2, Families: 2,
 		Dropped: []droppedPointer{
-			{XRef: "@F1@", Tag: "HUSB", Target: "@I2@", Restorable: true},
-			{XRef: "@F1@", Tag: "WIFE", Target: "@I3@", Restorable: true},
-			{XRef: "@F2@", Tag: "HUSB", Target: "@I4@", Restorable: true},
+			{XRef: "@F1@", Tag: "HUSB", Target: "@I2@", Restorable: true, Position: 1},
+			{XRef: "@F1@", Tag: "WIFE", Target: "@I3@", Restorable: true, Position: 2},
+			{XRef: "@F2@", Tag: "HUSB", Target: "@I4@", Restorable: true, Position: 1},
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("report = %+v, want %+v", got, want)
 	}
-	for _, key := range []string{`"output"`, `"records"`, `"individuals"`, `"families"`, `"dropped"`, `"xref"`, `"tag"`, `"target"`, `"restorable"`} {
+	for _, key := range []string{`"output"`, `"records"`, `"individuals"`, `"families"`, `"dropped"`, `"xref"`, `"tag"`, `"target"`, `"restorable"`, `"position"`} {
 		if !strings.Contains(stdout, key) {
 			t.Errorf("JSON lacks key %s:\n%s", key, stdout)
 		}
@@ -284,6 +284,9 @@ func TestExtractHelp(t *testing.T) {
 		"gedcom descendants --format json tree.ged I1 | jq -r '.[].xref' | gedcom extract tree.ged - -o branch.ged",
 		"--strip-submitter",
 		"carries the submitter's name, address, phone and email",
+		"gedcom extract --format json tree.ged I3 I4 -o b.ged > b.json",
+		"gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged",
+		`JSON "position"`, "a record nothing cites",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)

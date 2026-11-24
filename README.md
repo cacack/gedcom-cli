@@ -314,6 +314,23 @@ The output carries the input's header and submitter, contact details
 included: read the help on what `--strip-submitter` does and does not remove
 before sharing a file.
 
+To put the extracts of one master back together in the master's order, save
+each one's JSON report and give `combine` the reports of the files after the
+first as `--dropped`:
+
+```sh
+gedcom extract --format json tree.ged I1 I2 -o a.ged > a.json
+gedcom extract --format json tree.ged I3 I4 -o b.ged > b.json
+gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged
+gedcom diff tree.ged tree2.ged
+```
+
+Without the reports, a family split between files gets its `HUSB`, `WIFE`
+and `CHIL` lines back in one file's order. Either way the round trip
+reproduces only the records reachable from the people extracted: a record
+nothing cites (a `SUBM`, `REPO` or `SOUR` with no pointer to it) is in no
+extract, and so not in the combined file.
+
 ### put
 
 Corrects a file from a file of level-0 records, with no header, as `get`

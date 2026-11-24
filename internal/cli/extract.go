@@ -27,6 +27,12 @@ type droppedPointer struct {
 	Tag        string `json:"tag"`
 	Target     string `json:"target"`
 	Restorable bool   `json:"restorable"`
+	Position   int    `json:"position"`
+}
+
+// pointer is d as the library reported it.
+func (d droppedPointer) pointer() gedcom.DroppedPointer {
+	return gedcom.DroppedPointer{XRef: d.XRef, Tag: d.Tag, Target: d.Target, Restorable: d.Restorable, Position: d.Position}
 }
 
 func (d droppedPointer) String() string {
@@ -64,9 +70,19 @@ a family's CHIL for a child not extracted, is removed, so the output has no
 dangling pointers. Each one is listed on stderr as a warning (except with
 "-o -" and --format json, when stderr holds only the JSON report) and in the
 report's "dropped" list, with whether combining the file with one cut from the
-same master that holds the target is guaranteed to put it back (restorable).
+same master that holds the target is guaranteed to put it back (restorable),
+and where the line sat among its record's level-1 lines (JSON "position",
+from 1; 0 when not recorded).
 A pointer in an included record that resolves to nothing stops the extract
 instead, since dropping it would hide a defect: 'gedcom validate' finds them.
+
+To put the extracts of one master back together, save the JSON report of each
+and give 'gedcom combine --strategy zip' the reports of the files after the
+first as --dropped: it uses the positions to put a split family's HUSB, WIFE
+and CHIL lines back in the master's order. Without them the lines come back
+in one file's order. Such a round trip reproduces only the records reachable
+from the people extracted: a record nothing cites (a SUBM, REPO or SOUR with
+no pointer to it) is in no extract, and so not in the combined file.
 
 Records keep their xrefs, and every line that is kept is written as it was
 read. The header is the input's, so the output names the same submitter, and
@@ -81,7 +97,9 @@ stdout and the report to stderr. An existing output file is replaced, and only
 once the whole file is written.`,
 		Example: `  gedcom extract tree.ged @I1@ @I2@ -o couple.ged
   gedcom descendants --format json tree.ged I1 | jq -r '.[].xref' | gedcom extract tree.ged - -o branch.ged
-  gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged`,
+  gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
+  gedcom extract --format json tree.ged I3 I4 -o b.ged > b.json
+  gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged`,
 		Args: minArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := outputFormat(cmd)
@@ -208,7 +226,7 @@ func newExtractReport(out string, branch *gedcom.Document, dropped []gedcom.Drop
 		Dropped:     make([]droppedPointer, len(dropped)),
 	}
 	for i, d := range dropped {
-		report.Dropped[i] = droppedPointer{XRef: d.XRef, Tag: d.Tag, Target: d.Target, Restorable: d.Restorable}
+		report.Dropped[i] = droppedPointer{XRef: d.XRef, Tag: d.Tag, Target: d.Target, Restorable: d.Restorable, Position: d.Position}
 	}
 	return report
 }
