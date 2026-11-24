@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -22,7 +23,8 @@ a file defines an xref twice, the first definition is printed.
 --format json prints an array holding each record in gedcom-go's own shape.
 Its keys are the library's field names (XRef, Names, Husband), not the
 lowercase keys 'gedcom list' and 'gedcom validate' print, and they may change
-with the library.`,
+with the library. Each record also has a Type key, its level-0 tag (INDI,
+FAM, SUBM, _CUSTOM), which says what the other keys describe.`,
 		Example: `  gedcom get family.ged @I1@
   gedcom get family.ged I1 F1
   gedcom get --format json family.ged @I1@`,
@@ -73,18 +75,42 @@ func findRecords(doc *gedcom.Document, xrefs []string) ([]*gedcom.Record, error)
 	return records, nil
 }
 
-// writeRecordsJSON always writes an array: each record's typed entity, or the
-// record itself when it has none.
+// writeRecordsJSON always writes an array: each record's typed entity with
+// the record's Type added, or, when it has none, the record itself, which
+// has a Type of its own.
 func writeRecordsJSON(w io.Writer, records []*gedcom.Record) error {
 	out := make([]any, len(records))
 	for i, record := range records {
-		if record.Entity != nil {
-			out[i] = record.Entity
-		} else {
+		if record.Entity == nil {
 			out[i] = record
+			continue
 		}
+		entity, err := withType(record.Type, record.Entity)
+		if err != nil {
+			return err
+		}
+		out[i] = entity
 	}
 	return writeJSON(w, out)
+}
+
+// withType is entity's JSON object with a Type key, the record type, put
+// first. No typed entity has a Type field of its own, so the key is not
+// duplicated, and the entity's own keys keep their order.
+func withType(recordType gedcom.RecordType, entity any) (json.RawMessage, error) {
+	object, err := json.Marshal(entity)
+	if err != nil {
+		return nil, err
+	}
+	typeJSON, err := json.Marshal(recordType)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]byte(`{"Type":`), typeJSON...)
+	if string(object) != "{}" {
+		out = append(out, ',')
+	}
+	return append(out, object[1:]...), nil
 }
 
 // writeRecordsText writes each record's lines as Encode would write them

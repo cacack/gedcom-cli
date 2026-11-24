@@ -55,6 +55,53 @@ var listCases = []struct {
 			{"xref": "@O1@", "title": "Portrait of Cora Sample", "file": "photos/cora.jpg", "format": "jpg"},
 		},
 	},
+	{
+		kind: "subm",
+		text: "@U1@\tTest Submitter\n",
+		json: []map[string]any{
+			{"xref": "@U1@", "name": "Test Submitter"},
+		},
+	},
+}
+
+// TestListNotes lists shared note records: NOTE in a 5.5.1 file, SNOTE in a
+// 7.0 one. A multi-line text is one line in text output and kept in JSON.
+func TestListNotes(t *testing.T) {
+	tests := []struct {
+		kind, data string
+	}{
+		{"note", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+			"0 @N1@ NOTE First note\n1 CONT second line\n0 @N2@ NOTE Another\n0 TRLR\n"},
+		{"snote", "0 HEAD\n1 GEDC\n2 VERS 7.0\n" +
+			"0 @N1@ SNOTE First note\n1 CONT second line\n0 @N2@ SNOTE Another\n0 TRLR\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), tt.kind+".ged")
+			if err := os.WriteFile(path, []byte(tt.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, stdout, stderr := run(t, "list", path, tt.kind)
+			if want := "@N1@\tFirst note second line\n@N2@\tAnother\n"; code != ExitOK || stderr != "" || stdout != want {
+				t.Errorf("text: exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+			}
+			code, stdout, stderr = run(t, "list", "--format", "json", path, tt.kind)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+			}
+			var got []map[string]any
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+				t.Fatalf("stdout is not a JSON array: %v\n%s", err, stdout)
+			}
+			want := []map[string]any{
+				{"xref": "@N1@", "text": "First note\nsecond line"},
+				{"xref": "@N2@", "text": "Another"},
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("json: got %v, want %v", got, want)
+			}
+		})
+	}
 }
 
 func TestListText(t *testing.T) {
@@ -138,7 +185,7 @@ func TestListLimit(t *testing.T) {
 
 // TestListEmpty lists types the minimal fixture does not contain.
 func TestListEmpty(t *testing.T) {
-	for _, kind := range []string{"sour", "repo", "obje"} {
+	for _, kind := range []string{"sour", "repo", "obje", "note", "snote"} {
 		code, stdout, stderr := run(t, "list", sample, kind)
 		if code != ExitOK || stdout != "" || stderr != "" {
 			t.Errorf("%s text: exit = %d, stdout = %q, stderr = %q", kind, code, stdout, stderr)
@@ -399,7 +446,8 @@ func TestListHelpHasExample(t *testing.T) {
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac  count, place"} {
+	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac  count, place",
+		"subm  xref, name", "snote xref, text", "but SUBN"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}

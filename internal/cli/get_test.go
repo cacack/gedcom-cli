@@ -111,7 +111,8 @@ func TestGetJSON(t *testing.T) {
 }
 
 // TestGetJSONTypedEntity checks that the elements are the library's typed
-// entities (Names, Husband) rather than raw records (Type).
+// entities (Names, Husband) rather than raw records (Entity), each with its
+// record Type added first.
 func TestGetJSONTypedEntity(t *testing.T) {
 	code, stdout, stderr := run(t, "get", "--format", "json", records, "@I1@", "@F1@")
 	if code != ExitOK {
@@ -135,8 +136,33 @@ func TestGetJSONTypedEntity(t *testing.T) {
 		t.Errorf("family Husband = %s, want \"@I2@\"", got[1]["Husband"])
 	}
 	for i, element := range got {
-		if _, ok := element["Type"]; ok {
+		if _, ok := element["Entity"]; ok {
 			t.Errorf("element %d is a raw record, want its typed entity", i)
+		}
+	}
+	if !strings.Contains(stdout, "{\n    \"Type\": \"INDI\",\n    \"XRef\": \"@I1@\",") {
+		t.Errorf("individual does not start with its Type:\n%s", stdout)
+	}
+}
+
+// TestGetJSONType checks that every record type carries its tag as Type.
+func TestGetJSONType(t *testing.T) {
+	xrefs := []string{"@U1@", "@I1@", "@F1@", "@S1@", "@R1@", "@O1@"}
+	code, stdout, stderr := run(t, append([]string{"get", "--format", "json", records}, xrefs...)...)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []struct{ Type, XRef string }
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array: %v\n%s", err, stdout)
+	}
+	want := []string{"SUBM", "INDI", "FAM", "SOUR", "REPO", "OBJE"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d elements, want %d", len(got), len(want))
+	}
+	for i, element := range got {
+		if element.Type != want[i] || element.XRef != xrefs[i] {
+			t.Errorf("element %d = %+v, want Type %s, XRef %s", i, element, want[i], xrefs[i])
 		}
 	}
 }
