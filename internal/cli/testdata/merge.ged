@@ -1,0 +1,66 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 SEX F
+1 BIRT
+2 DATE 3 MAR 1801
+1 FAMS @F1@
+1 FAMC @F3@
+0 @I2@ INDI
+1 NAME Ada /Example/
+1 SEX F
+1 BIRT
+2 DATE 1802
+2 SOUR @S1@
+1 DEAT
+2 DATE 14 NOV 1878
+1 FAMS @F2@
+1 FAMC @F3@
+1 NOTE Recorded twice in the parish register
+0 @I3@ INDI
+1 NAME Carl /Example/
+1 SEX M
+1 FAMS @F1@
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Dora /Example/
+1 SEX F
+1 FAMC @F1@
+0 @I5@ INDI
+1 NAME Emil /Example/
+1 SEX M
+1 FAMC @F2@
+0 @I6@ INDI
+1 NAME Finn /Sample/
+1 SEX M
+1 ASSO @I2@
+2 RELA Godfather
+0 @I7@ INDI
+1 NAME Gus /Example/
+1 SEX M
+1 FAMS @F3@
+0 @F1@ FAM
+1 HUSB @I3@
+1 WIFE @I1@
+1 CHIL @I4@
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I2@
+1 CHIL @I5@
+1 MARR
+2 DATE 1820
+0 @F3@ FAM
+1 HUSB @I7@
+1 CHIL @I1@
+1 CHIL @I2@
+0 @S1@ SOUR
+1 TITL Example parish register
+0 TRLR
