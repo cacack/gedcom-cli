@@ -25,8 +25,10 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // writeCommands holds every command that writes a GEDCOM file, as the
 // arguments that run it on in, writing out, with no change requested. Each
 // one must come back byte-identical (CONSTITUTION.md C2); add a new write
-// command here. Every fixture is GEDCOM 5.5.1 in UTF-8. delete always changes the file, so it is held instead to
-// removing exactly the deleted record's lines (TestDeleteRemovesOnlyTheRecord).
+// command here. Every fixture is GEDCOM 5.5.1 in UTF-8. delete always changes
+// the file, so it is held instead to removing exactly the deleted record's lines
+// (TestDeleteRemovesOnlyTheRecord). merge-people and merge-families always
+// request a change, so TestMergeKeepsUninvolvedRecords holds them to C2 instead.
 var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 	"convert": func(_ *testing.T, in, out string) []string {
 		return []string{"convert", in, "--to", "5.5.1", "-o", out}

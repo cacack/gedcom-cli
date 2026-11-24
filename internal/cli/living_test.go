@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -84,6 +85,7 @@ func TestListLiving(t *testing.T) {
 // command here.
 func TestRedactLiving(t *testing.T) {
 	all := []string{"@I1@", "@I2@", "@I3@", "@I4@", "@I5@", "@F1@", "@F2@", "@N1@"}
+	out := filepath.Join(t.TempDir(), "out.ged")
 	tests := []struct {
 		name string
 		args []string
@@ -99,6 +101,9 @@ func TestRedactLiving(t *testing.T) {
 		{"extract", []string{"extract", living, "I1", "I3", "I5", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living", "1 CHIL @I5@", "Ann /Example/", "1 JUN 1925"}},
 		{"extract json", []string{"extract", "--format", "json", living, "I3", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living"}},
 		{"validate", []string{"validate", "--min-severity", "info", living}, ExitError, []string{"INVALID_LEVEL\tLiving", "@I5@ line 46\tINVALID_DATE\tLiving"}},
+		{"merge-people", []string{"merge-people", living, "@I3@", "@I5@", "-o", out}, ExitOK, []string{"conflict\tBIRT\tLiving", "repointed\t@F2@\tFAM.CHIL"}},
+		{"merge-people json", []string{"merge-people", "--format", "json", living, "@I1@", "@I3@", "-o", out}, ExitOK, []string{"\"lines\": [\n        \"Living\""}},
+		{"merge-families", []string{"merge-families", living, "@F1@", "@F2@", "-o", out}, ExitOK, []string{"conflict\tMARR\tLiving", "repointed\t@I5@\tINDI.FAMC"}},
 		{"validate json", []string{"validate", "--format", "json", "--min-severity", "info", living}, ExitError, []string{`"code": "INVALID_DATE"`, `"message": "Living"`}},
 	}
 	for _, tt := range tests {

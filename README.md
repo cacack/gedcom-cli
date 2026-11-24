@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete` and `convert`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people` and `merge-families`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -340,6 +340,41 @@ back byte-identical. 5.5 is not a target, since 5.5 does not allow UTF-8.
 Text from an ANSEL file is written decomposed (a letter followed by a
 combining accent), as gedcom-go decodes it.
 
+`merge-people` folds one individual into another, once you have confirmed
+they are the same person (say, a pair `duplicates` found); nothing is merged
+on its own. The first xref is kept, the second is dropped, and the result is
+written to a new file. gedcom-go moves the dropped person's names, events,
+family links, citations and notes to the kept one, skipping any the kept one
+already holds line for line, and repoints every pointer to the dropped one.
+Records not involved are written exactly as they were read. `merge-families`
+does the same for two families:
+
+```sh
+gedcom merge-people family.ged @I1@ @I7@ -o merged.ged
+gedcom merge-families merged.ged @F1@ @F4@ -o merged2.ged
+gedcom merge-people --format json family.ged I1 I7 -o merged.ged | jq '.moved[] | select(.conflict)'
+```
+
+```text
+conflict	BIRT	1 BIRT | 2 DATE 1802 | 2 SOUR @S1@
+moved	DEAT	1 DEAT | 2 DATE 14 NOV 1878
+moved	FAMS	1 FAMS @F4@
+deduplicated	NAME	1 NAME Ada /Example/
+repointed	@F4@	FAM.WIFE
+collapsed	@F3@	FAM.CHIL
+candidate	@I3@	@F1@	@F4@
+```
+
+Each line says what happened to one substructure or pointer: `moved` to the
+kept record; `conflict`, moved, but the kept record already held that tag
+with other lines (for a family, a second `HUSB` or `WIFE`): one fact stated two
+ways, such as two births, or two facts, such as two occupations, so check
+which; `deduplicated`, already there; `repointed`, a pointer now naming the
+kept record; `collapsed`, a pointer removed because it would repeat its
+neighbor. `candidate` lists families the kept person is now a spouse in with
+the same partner: candidates for `merge-families`, which `merge-people` does
+not merge. Run `validate` on the result.
+
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
 ## Conventions
@@ -359,7 +394,8 @@ These hold for every command, so scripts and agents can rely on them:
   once the whole output is written, keeping that file's permissions.
 - **`--redact-living`** replaces what the output says about a person presumed
   living with `Living`: name, dates, places, notes, addresses, and in `get`
-  their raw lines. The xref, sex and family links stay, so the structure is
+  and the merge reports their raw lines (a file a command writes is not
+  redacted). The xref, sex and family links stay, so the structure is
   still readable. A family with a living spouse keeps only its spouses and
   children, and a note record a hidden person or family points to reads
   `Living`. `validate` still checks the whole file; a finding about a hidden
