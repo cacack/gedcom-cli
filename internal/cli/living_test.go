@@ -102,6 +102,8 @@ func TestRedactLiving(t *testing.T) {
 		{"list indi", []string{"list", living, "indi"}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
 		{"list fam", []string{"list", living, "fam"}, ExitOK, []string{"@F2@\t@I4@\t@I3@\t\t1", "1 JUN 1925"}},
 		{"list json", []string{"list", "--format", "json", living, "indi"}, ExitOK, []string{`"name": "Living"`, "Ann /Example/"}},
+		{"list plac", []string{"list", living, "plac"}, ExitOK, []string{"2\tOldtown, Example County\n"}},
+		{"list plac json", []string{"list", "--format", "json", living, "plac"}, ExitOK, []string{`"place": "Oldtown, Example County"`, `"count": 2`}},
 		{"extract", []string{"extract", living, "I1", "I3", "I5", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living", "1 CHIL @I5@", "Ann /Example/", "1 JUN 1925"}},
 		{"extract json", []string{"extract", "--format", "json", living, "I3", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living"}},
 		{"validate", []string{"validate", "--min-severity", "info", living}, ExitError, []string{"INVALID_LEVEL\tLiving", "@I5@ line 46\tINVALID_DATE\tLiving"}},
