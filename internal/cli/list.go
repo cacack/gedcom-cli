@@ -14,7 +14,7 @@ import (
 
 // listTypes are the types list accepts, as the user writes them: the record
 // types, and plac for the distinct places.
-var listTypes = []string{"indi", "fam", "sour", "repo", "obje", "plac"}
+var listTypes = []string{"indi", "fam", "sour", "repo", "obje", "subm", "note", "snote", "plac"}
 
 // row is one listed record or place. Its JSON form is the row struct itself;
 // fields gives the same values, in the same order, for text output. placRow
@@ -55,6 +55,17 @@ type objeRow struct {
 	Format string `json:"format"`
 }
 
+type submRow struct {
+	XRef string `json:"xref"`
+	Name string `json:"name"`
+}
+
+// noteRow is a shared note record: a 5.x NOTE or a 7.0 SNOTE.
+type noteRow struct {
+	XRef string `json:"xref"`
+	Text string `json:"text"`
+}
+
 // placRow is one distinct PLAC value. The coordinates are those of the MAP
 // under a use of it, as written in the file; they are in JSON only.
 type placRow struct {
@@ -73,12 +84,14 @@ func (r famRow) fields() []string {
 func (r sourRow) fields() []string { return []string{r.XRef, r.Title, r.Author} }
 func (r repoRow) fields() []string { return []string{r.XRef, r.Name} }
 func (r objeRow) fields() []string { return []string{r.XRef, r.Title, r.File, r.Format} }
+func (r submRow) fields() []string { return []string{r.XRef, r.Name} }
+func (r noteRow) fields() []string { return []string{r.XRef, r.Text} }
 func (r placRow) fields() []string { return []string{strconv.Itoa(r.Count), r.Place} }
 
 func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <file> <type>",
-		Short: "List the records of one type (indi, fam, sour, repo, obje) or the places (plac), one per line",
+		Short: "List the records of one type (indi, fam, sour, repo, obje, subm, note, snote) or the places (plac), one per line",
 		Long: `List the records of one type, one per line, in file order; or, for plac,
 the distinct places in the file, most used first.
 
@@ -90,7 +103,14 @@ JSON keys, are:
   sour  xref, title, author
   repo  xref, name
   obje  xref, title, file, format (of the record's first file)
+  subm  xref, name
+  note  xref, text (shared NOTE records, GEDCOM 5.x)
+  snote xref, text (shared SNOTE records, GEDCOM 7.0)
   plac  count, place (JSON adds latitude and longitude)
+
+These cover every level-0 record type but SUBN (the GEDCOM 5.5 submission
+record) and extension records (tags starting with _); 'gedcom get' prints
+any record by xref.
 
 Dates are printed as written in the file. An absent value is empty. In text
 output, control characters in a value (a line break in a multi-line title, a
@@ -163,6 +183,12 @@ func listRows(doc *gedcom.Document, living map[*gedcom.Individual]bool, kind str
 		return rowsOf(doc.Sources(), limit, newSourRow)
 	case "repo":
 		return rowsOf(doc.Repositories(), limit, newRepoRow)
+	case "subm":
+		return rowsOf(doc.Submitters(), limit, newSubmRow)
+	case "note":
+		return rowsOf(doc.Notes(), limit, newNoteRow)
+	case "snote":
+		return rowsOf(doc.SharedNotes(), limit, newSharedNoteRow)
 	case "plac":
 		return placeRows(doc, limit)
 	default:
@@ -272,6 +298,18 @@ func newSourRow(s *gedcom.Source) row {
 
 func newRepoRow(r *gedcom.Repository) row {
 	return repoRow{XRef: r.XRef, Name: r.Name}
+}
+
+func newSubmRow(s *gedcom.Submitter) row {
+	return submRow{XRef: s.XRef, Name: s.Name}
+}
+
+func newNoteRow(n *gedcom.Note) row {
+	return noteRow{XRef: n.XRef, Text: n.Text}
+}
+
+func newSharedNoteRow(n *gedcom.SharedNote) row {
+	return noteRow{XRef: n.XRef, Text: n.Text}
 }
 
 func newObjeRow(o *gedcom.MediaObject) row {

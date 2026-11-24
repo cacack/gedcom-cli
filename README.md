@@ -99,10 +99,15 @@ gedcom get family.ged I1 F1          # the @ delimiters are optional
 gedcom get --format json family.ged @I1@
 ```
 
+With `--format json` each record is gedcom-go's own shape for it, plus a
+`Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`).
+
 ### list
 
-Prints one line per record of a type (`indi`, `fam`, `sour`, `repo` or
-`obje`), tab-separated and in file order:
+Prints one line per record of a type (`indi`, `fam`, `sour`, `repo`, `obje`,
+`subm`, or the shared notes `note` in GEDCOM 5.x and `snote` in 7.0),
+tab-separated and in file order. That is every record type but `SUBN` and
+extension records; `--help` gives each type's fields.
 
 ```sh
 gedcom list family.ged indi
