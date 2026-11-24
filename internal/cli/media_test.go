@@ -135,6 +135,77 @@ func TestMediaCheckJSON(t *testing.T) {
 	}
 }
 
+// mediaEmptyGED is a media object whose FILE has no value, as some exports
+// write for media that is not a local file.
+const mediaEmptyGED = `0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @O1@ OBJE
+1 FILE
+2 FORM jpg
+2 TITL Online image
+0 TRLR
+`
+
+func TestMediaCheckEmptyFile(t *testing.T) {
+	file, root := mediaFixture(t, mediaEmptyGED)
+	code, stdout, stderr := run(t, "media", "check", "--root", root, file)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "empty\t@O1@\tline 7\t\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+
+	code, stdout, stderr = run(t, "media", "check", "--format", "json", "--root", root, file)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+	}
+	var report mediaCheckReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("stdout is not a media check report: %v\n%s", err, stdout)
+	}
+	if len(report.References) != 1 || report.References[0] != (mediaRef{XRef: "@O1@", Line: 7, Status: "empty"}) {
+		t.Errorf("references = %+v", report.References)
+	}
+}
+
+func TestMediaCheckEmptyAndMissing(t *testing.T) {
+	ged := strings.Replace(mediaEmptyGED, "0 TRLR\n", "0 @O2@ OBJE\n1 FILE photos/gone.jpg\n2 FORM jpg\n0 TRLR\n", 1)
+	file, root := mediaFixture(t, ged)
+	code, stdout, stderr := run(t, "media", "check", "--root", root, file)
+	if code != ExitError {
+		t.Fatalf("exit = %d, want %d (stderr %q)", code, ExitError, stderr)
+	}
+	if stderr != "gedcom: 1 missing media file in "+file+"\n" {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if want := "empty\t@O1@\tline 7\t\nmissing\t@O2@\tline 11\tphotos/gone.jpg\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+
+	code, stdout, _ = run(t, "media", "check", "--format", "json", "--root", root, file)
+	if code != ExitError {
+		t.Errorf("json: exit = %d, want %d", code, ExitError)
+	}
+	var report mediaCheckReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("stdout is not a media check report: %v\n%s", err, stdout)
+	}
+	if len(report.References) != 2 || report.References[0].Status != "empty" || report.References[1].Status != "missing" {
+		t.Errorf("references = %+v", report.References)
+	}
+}
+
+func TestMediaCheckHelpListsEmpty(t *testing.T) {
+	code, stdout, _ := run(t, "media", "check", "--help")
+	if code != ExitOK || !strings.Contains(stdout, "  empty     no value") {
+		t.Errorf("exit = %d, help does not list the empty status:\n%s", code, stdout)
+	}
+}
+
 func TestMediaCheckUsage(t *testing.T) {
 	file, root := mediaFixture(t, mediaGED)
 	if code, _, _ := run(t, "media", "check", file); code != ExitUsage {

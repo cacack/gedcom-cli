@@ -24,6 +24,7 @@ import (
 const (
 	statusOK           = "ok"
 	statusMissing      = "missing"
+	statusEmpty        = "empty"
 	statusURL          = "url"
 	statusAbsolute     = "absolute"
 	statusOutside      = "outside"
@@ -86,6 +87,7 @@ status:
 
   ok        a relative path naming a file under --root
   missing   a relative path naming no file under --root
+  empty     no value: the media is not a local file
   url       a URL (it starts with a scheme such as https: or file:)
   absolute  a rooted path (/x, \x or C:\x), which is not resolved
   outside   a relative path that climbs out of --root (../x), not resolved
@@ -173,6 +175,8 @@ func checkMedia(doc *gedcom.Document, file, root string, withUnreferenced bool) 
 			}
 			ref := mediaRef{XRef: record.XRef, Line: tag.LineNumber, File: tag.Value}
 			switch {
+			case strings.TrimSpace(tag.Value) == "":
+				ref.Status = statusEmpty
 			case urlRef.MatchString(tag.Value):
 				ref.Status = statusURL
 			case absoluteRef.MatchString(tag.Value):

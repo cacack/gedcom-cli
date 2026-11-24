@@ -232,9 +232,9 @@ text row is `changed`, an empty field, then `HEAD`, and its JSON `xref` is
 `""`.
 
 `media check` reports whether each `FILE` reference resolves to a file under a
-media folder: `ok`, `missing`, `url`, `absolute` (a rooted path) or `outside`
-(a relative path that climbs out of the folder); the last two are not
-resolved. It exits `1` when any reference is missing. `--unreferenced` also
+media folder: `ok`, `missing`, `empty` (a `FILE` with no value: the media is
+not a local file), `url`, `absolute` (a rooted path) or `outside` (a relative
+path that climbs out of the folder); the last two are not resolved. It exits `1` when any reference is missing. `--unreferenced` also
 lists the files in the folder that nothing references. The media files are
 only looked at, never changed:
 
