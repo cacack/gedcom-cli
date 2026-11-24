@@ -44,7 +44,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | Command | What it does |
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
-| [`get`](#get) | Print records by xref |
+| [`get`](#get) | Print records by xref, or the header |
 | [`list`](#list) | List the records of one type, or the places, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
@@ -98,11 +98,13 @@ each record. Its text output is what [`put`](#put) takes back.
 ```sh
 gedcom get family.ged @I1@
 gedcom get family.ged I1 F1          # the @ delimiters are optional
+gedcom get family.ged HEAD           # the header
 gedcom get --format json family.ged @I1@
 ```
 
 With `--format json` each record is gedcom-go's own shape for it, plus a
-`Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`).
+`Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`, and `HEAD` for the
+header). `put` takes records back, not the header.
 
 ### list
 
@@ -582,7 +584,7 @@ These hold for every command, so scripts and agents can rely on them:
   too: `put`, `delete`, `media add`, the merge commands and
   `convert` edit or rewrite the whole tree and write it unredacted. Source,
   media, repository and submitter records are not redacted, even when a
-  hidden record cites them:
+  hidden record cites them, and neither is the header (`get HEAD`):
   check their titles, file names and addresses yourself. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or

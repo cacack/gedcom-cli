@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/cacack/gedcom-go/v3/encoder"
@@ -11,22 +12,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// headerArg is the argument that names the header in 'gedcom get'.
+const headerArg = "HEAD"
+
 func newGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <file> <xref>...",
-		Short: "Print records by xref: a person, family, source or any other record",
+		Use:   "get <file> <xref|HEAD>...",
+		Short: "Print records by xref: a person, family, source or any other record, or the header",
 		Long: `Print records by xref, in the order given, as the GEDCOM lines of each record.
 
 An xref may be given without its @ delimiters. Xrefs are case-sensitive. When
 a file defines an xref twice, the first definition is printed.
 
+HEAD, exactly, prints the header's lines instead, and may be given among the
+xrefs; @HEAD@ is an xref. The header is printed as the file has it, even with
+--redact-living: like a submitter record, it is never redacted, so check any
+names in its lines yourself. 'gedcom put' does not take the header back: it
+replaces records only.
+
 --format json prints an array holding each record in gedcom-go's own shape.
 Its keys are the library's field names (XRef, Names, Husband), not the
 lowercase keys 'gedcom list' and 'gedcom validate' print, and they may change
 with the library. Each record also has a Type key, its level-0 tag (INDI,
-FAM, SUBM, _CUSTOM), which says what the other keys describe.`,
+FAM, SUBM, _CUSTOM), which says what the other keys describe; the header's
+is HEAD.`,
 		Example: `  gedcom get family.ged @I1@
   gedcom get family.ged I1 F1
+  gedcom get family.ged HEAD @U1@
   gedcom get --format json family.ged @I1@`,
 		Args: minArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,16 +50,40 @@ FAM, SUBM, _CUSTOM), which says what the other keys describe.`,
 			if err != nil {
 				return err
 			}
-			records, err := findRecords(doc, args[1:])
+			selected, err := selectRecords(doc, args[1:])
 			if err != nil {
 				return err
 			}
 			if format == formatJSON {
-				return writeRecordsJSON(cmd.OutOrStdout(), records)
+				return writeRecordsJSON(cmd.OutOrStdout(), selected)
 			}
-			return writeRecordsText(cmd.OutOrStdout(), doc, records)
+			return writeRecordsText(cmd.OutOrStdout(), doc, selected)
 		},
 	}
+}
+
+// selectRecords resolves get's arguments, in order: each is the
+// *gedcom.Header for HEAD, or the *gedcom.Record findRecords finds.
+func selectRecords(doc *gedcom.Document, args []string) ([]any, error) {
+	isHeader := func(arg string) bool { return arg == headerArg }
+	records, err := findRecords(doc, slices.DeleteFunc(slices.Clone(args), isHeader))
+	if err != nil {
+		return nil, err
+	}
+	header := doc.Header
+	if header == nil {
+		header = &gedcom.Header{}
+	}
+	selected := make([]any, 0, len(args))
+	for _, arg := range args {
+		if isHeader(arg) {
+			selected = append(selected, header)
+			continue
+		}
+		selected = append(selected, records[0])
+		records = records[1:]
+	}
+	return selected, nil
 }
 
 // findRecords resolves every xref, in order, before anything is written. An
@@ -75,28 +111,33 @@ func findRecords(doc *gedcom.Document, xrefs []string) ([]*gedcom.Record, error)
 	return records, nil
 }
 
-// writeRecordsJSON always writes an array: each record's typed entity with
-// the record's Type added, or, when it has none, the record itself, which
-// has a Type of its own.
-func writeRecordsJSON(w io.Writer, records []*gedcom.Record) error {
-	out := make([]any, len(records))
-	for i, record := range records {
-		if record.Entity == nil {
-			out[i] = record
-			continue
+// writeRecordsJSON always writes an array: the header, or each record's typed
+// entity, with Type added, or, when a record has none, the record itself,
+// which has a Type of its own.
+func writeRecordsJSON(w io.Writer, selected []any) error {
+	out := make([]any, len(selected))
+	for i, item := range selected {
+		var err error
+		switch item := item.(type) {
+		case *gedcom.Header:
+			out[i], err = withType(headerArg, item)
+		case *gedcom.Record:
+			if item.Entity == nil {
+				out[i] = item
+				continue
+			}
+			out[i], err = withType(item.Type, item.Entity)
 		}
-		entity, err := withType(record.Type, record.Entity)
 		if err != nil {
 			return err
 		}
-		out[i] = entity
 	}
 	return writeJSON(w, out)
 }
 
 // withType is entity's JSON object with a Type key, the record type, put
-// first. No typed entity has a Type field of its own, so the key is not
-// duplicated, and the entity's own keys keep their order.
+// first. No typed entity, nor the header, has a Type field of its own, so the
+// key is not duplicated, and the entity's own keys keep their order.
 func withType(recordType gedcom.RecordType, entity any) (json.RawMessage, error) {
 	object, err := json.Marshal(entity)
 	if err != nil {
@@ -116,12 +157,25 @@ func withType(recordType gedcom.RecordType, entity any) (json.RawMessage, error)
 	return append(out, object[1:]...), nil
 }
 
-// writeRecordsText writes each record's lines as Encode would write them
-// within doc, with no header or trailer.
-func writeRecordsText(w io.Writer, doc *gedcom.Document, records []*gedcom.Record) error {
-	for _, record := range records {
-		if err := encoder.EncodeRecord(w, doc, record, nil); err != nil {
-			return err
+// writeRecordsText writes the header's lines, or each record's, as Encode
+// would write them within doc, with no trailer.
+func writeRecordsText(w io.Writer, doc *gedcom.Document, selected []any) error {
+	for _, item := range selected {
+		switch item := item.(type) {
+		case *gedcom.Header:
+			// A stream encoder writes the header Encode writes. It is left
+			// without its trailer, so it is flushed rather than closed.
+			enc := encoder.NewStreamEncoder(w)
+			if err := enc.WriteHeader(item); err != nil {
+				return err
+			}
+			if err := enc.Flush(); err != nil {
+				return err
+			}
+		case *gedcom.Record:
+			if err := encoder.EncodeRecord(w, doc, item, nil); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
