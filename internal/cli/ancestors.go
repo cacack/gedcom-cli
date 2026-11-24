@@ -19,6 +19,13 @@ func (r relativeRow) fields() []string {
 	return append([]string{strconv.Itoa(r.Generation)}, r.indiRow.fields()...)
 }
 
+// linkRule is the rule ancestors, descendants and relatives share, and say in
+// their help, for a family link only one side records: gedcom-go's
+// reciprocal-link rule (Individual.IsSpouseIn).
+const linkRule = `A family link counts only when both sides record it: the person's FAMS or
+FAMC names the family, and the family names the person as HUSB, WIFE or
+CHIL. A link only one side records is not followed.`
+
 // walkFunc is a generational walk from gedcom-go, such as
 // Document.AncestorsWithGenerations.
 type walkFunc func(doc *gedcom.Document, xref string, maxGenerations int) []gedcom.Relative
@@ -47,7 +54,9 @@ Rows are ordered by generation, then in gedcom-go's order within it:
 %[4]s
 
 A person reached by more than one path (pedigree collapse, such as a cousin
-marriage) is listed once, at the generation of the shortest path.`, name, first, second, order),
+marriage) is listed once, at the generation of the shortest path.
+
+%[5]s`, name, first, second, order, linkRule),
 		Example: fmt.Sprintf(`  gedcom %[1]s family.ged @I1@
   gedcom %[1]s --generations 3 family.ged I1
   gedcom %[1]s --format json family.ged @I1@ | jq '.[] | select(.generation == 2)'`, name),

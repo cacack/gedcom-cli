@@ -11,19 +11,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mergeKind is what merge-people and merge-families share: the record type
-// they merge, the library call that merges it, and the pointer tags the
-// record holds one of, so that a second is a conflict.
+// mergeKind is what the merge commands share: the record type they merge,
+// the library call that merges it, and the pointer tags the record holds one
+// of, so that a second is a conflict.
 type mergeKind struct {
 	recordType gedcom.RecordType
 	noun       string
 	merge      func(*gedcom.Document, string, string, merge.RecordMergeOptions) (*gedcom.Document, *merge.RecordMergeReport, error)
 	onePointer map[string]bool
+	// foldEvents is set for a record with events, which --fold-events folds.
+	foldEvents bool
+	// dropped is set for a record the library may leave lines of drop's out
+	// of (RecordMergeReport.Conflicts), which the report then lists.
+	dropped bool
 }
 
 var (
-	mergePeople   = mergeKind{gedcom.RecordTypeIndividual, "an individual", merge.Individuals, nil}
-	mergeFamilies = mergeKind{gedcom.RecordTypeFamily, "a family", merge.Families, map[string]bool{"HUSB": true, "WIFE": true}}
+	mergePeople       = mergeKind{recordType: gedcom.RecordTypeIndividual, noun: "an individual", merge: merge.Individuals, foldEvents: true}
+	mergeFamilies     = mergeKind{recordType: gedcom.RecordTypeFamily, noun: "a family", merge: merge.Families, onePointer: map[string]bool{"HUSB": true, "WIFE": true}, foldEvents: true}
+	mergeSources      = mergeKind{recordType: gedcom.RecordTypeSource, noun: "a source", merge: merge.Sources, dropped: true}
+	mergeRepositories = mergeKind{recordType: gedcom.RecordTypeRepository, noun: "a repository", merge: merge.Repositories, dropped: true}
 )
 
 // mergedPart is one level-1 substructure of the dropped record, as its lines.
@@ -49,6 +56,16 @@ type mergedFold struct {
 	Into  []string `json:"into"`
 }
 
+// mergedConflict is one substructure of the dropped record not carried to
+// the kept record: its line may occur only once, and keep holds another.
+type mergedConflict struct {
+	Tag string `json:"tag"`
+	// Lines are drop's substructure, which the output lacks; Kept are the
+	// lines keep holds instead.
+	Lines []string `json:"lines"`
+	Kept  []string `json:"kept"`
+}
+
 // mergeRef is one pointer that named the dropped record.
 type mergeRef struct {
 	XRef string `json:"xref"`
@@ -72,6 +89,8 @@ type mergeReport struct {
 	Collapsed    []mergeRef   `json:"collapsed"`
 	// Candidates is set by merge-people only.
 	Candidates *[]familyCandidate `json:"candidates,omitempty"`
+	// Dropped is set by merge-sources and merge-repositories only.
+	Dropped *[]mergedConflict `json:"dropped,omitempty"`
 }
 
 func newMergePeopleCmd() *cobra.Command {
@@ -165,6 +184,77 @@ output to check the result.`,
 	})
 }
 
+func newMergeSourcesCmd() *cobra.Command {
+	return newMergeCmd(mergeSources, &cobra.Command{
+		Use:   "merge-sources <file> <keep> <drop> -o <out>",
+		Short: "Fold one source into another, writing a new file",
+		Long: `Merge the source record <drop> into the source record <keep>, and write the
+result to --output. The input file is never changed. Deciding that the two
+are one source is yours: a file combined from two exports of one site often
+holds the same source twice, under two xrefs.
+
+gedcom-go does the merge. Every citation of drop, anywhere in the file, is
+rewritten to cite keep; no citation is removed, and the lines under it
+(PAGE, DATA, QUAY, vendor tags) are not touched. drop is removed. Records
+not involved are written exactly as they were read. drop's own lines are
+carried to keep this way:
+
+  - a line a source may hold only once (TITL, AUTH, PUBL, ABBR, TEXT, DATA,
+    CHAN, and the others the file's GEDCOM version allows once) is carried
+    when keep has none, deduplicated when keep's is the same, and otherwise
+    not carried: keep's stays, and drop's is reported as dropped
+  - every other line (NOTE, OBJE, REFN, vendor tags such as _APID, and REPO
+    except in GEDCOM 5.5) is carried, unless keep already holds the same lines
+
+The report lists, one per line and tab-separated:
+
+  moved         tag, lines    a substructure of drop now under keep
+  conflict      tag, lines    moved, but keep already held that tag, with
+                              other lines and a value that is not a pointer
+                              (two _APID, two NOTE); check which
+  dropped       tag, lines, kept
+                              not carried: the tag may occur once and keep
+                              holds other lines, kept; the output lacks
+                              drop's lines, so copy what you need from here
+  deduplicated  tag, lines    not moved, keep already held the same lines
+  repointed     xref, path    a citation that named drop and now names keep
+
+A substructure's lines are joined with " | ". Run 'gedcom validate' on the
+output to check the result.`,
+		Example: `  gedcom merge-sources family.ged @S1@ @S7@ -o merged.ged
+  gedcom merge-sources --format json family.ged S1 S7 -o merged.ged | jq '.dropped'
+  gedcom merge-repositories merged.ged @R1@ @R2@ -o merged2.ged`,
+	})
+}
+
+func newMergeRepositoriesCmd() *cobra.Command {
+	return newMergeCmd(mergeRepositories, &cobra.Command{
+		Use:   "merge-repositories <file> <keep> <drop> -o <out>",
+		Short: "Fold one repository into another, writing a new file",
+		Long: `Merge the repository record <drop> into the repository record <keep>, and
+write the result to --output. The input file is never changed. Deciding that
+the two are one repository is yours.
+
+gedcom-go does the merge, by merge-sources' rule: a line a repository may
+hold only once (NAME, ADDR, CHAN, and the others the file's GEDCOM version
+allows once) is carried when keep has none, deduplicated when keep's is the
+same, and otherwise reported as dropped; every other line (PHON, EMAIL, FAX,
+WWW, NOTE, REFN, vendor tags) is carried unless keep holds the same lines.
+Every REPO line of a source that named drop is rewritten to name keep, and
+one that would then repeat a line beside it (a source that named both, with
+the same call number) is removed. drop is removed. Records not involved are
+written exactly as they were read.
+
+The report is merge-sources', with one more kind of line:
+
+  collapsed     xref, path    a pointer to drop removed as a repeat
+
+Run 'gedcom validate' on the output to check the result.`,
+		Example: `  gedcom merge-repositories family.ged @R1@ @R2@ -o merged.ged
+  gedcom merge-repositories --format json family.ged R1 R2 -o merged.ged`,
+	})
+}
+
 // newMergeCmd completes cmd, which holds the command's help, as a merge of
 // kind's records.
 func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
@@ -202,7 +292,10 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 			}
 		}
 
-		fold, _ := cmd.Flags().GetBool("fold-events")
+		fold := false
+		if kind.foldEvents {
+			fold, _ = cmd.Flags().GetBool("fold-events")
+		}
 		merged, libReport, err := kind.merge(doc, keep.XRef, drop.XRef, merge.RecordMergeOptions{FoldEvents: fold})
 		if err != nil {
 			return err
@@ -224,7 +317,9 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 		return writeMergeText(w, report)
 	}
 	addOutputFlag(cmd)
-	cmd.Flags().Bool("fold-events", false, "fold an event of drop into keep's record of the same event, instead of adding it beside it")
+	if kind.foldEvents {
+		cmd.Flags().Bool("fold-events", false, "fold an event of drop into keep's record of the same event, instead of adding it beside it")
+	}
 	return cmd
 }
 
@@ -263,6 +358,17 @@ func newMergeReport(doc *gedcom.Document, kind mergeKind, keep *gedcom.Record, r
 	}
 	for _, s := range r.Deduplicated {
 		report.Deduplicated = append(report.Deduplicated, newMergedPart(s, redact))
+	}
+	if kind.dropped {
+		dropped := make([]mergedConflict, 0, len(r.Conflicts))
+		for _, c := range r.Conflicts {
+			dropped = append(dropped, mergedConflict{
+				Tag:   c.Drop.Tags[0].Tag,
+				Lines: newMergedPart(c.Drop, redact).Lines,
+				Kept:  newMergedPart(c.Keep, redact).Lines,
+			})
+		}
+		report.Dropped = &dropped
 	}
 	return report
 }
@@ -344,6 +450,11 @@ func writeMergeText(w io.Writer, r *mergeReport) error {
 	}
 	for _, f := range r.Folded {
 		lines = append(lines, "folded\t"+f.Tag+"\t"+strings.Join(f.Lines, " | ")+"\t"+strings.Join(f.Into, " | "))
+	}
+	if r.Dropped != nil {
+		for _, c := range *r.Dropped {
+			lines = append(lines, "dropped\t"+c.Tag+"\t"+strings.Join(c.Lines, " | ")+"\t"+strings.Join(c.Kept, " | "))
+		}
 	}
 	for _, p := range r.Deduplicated {
 		lines = append(lines, "deduplicated\t"+p.Tag+"\t"+strings.Join(p.Lines, " | "))

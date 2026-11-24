@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -379,6 +380,13 @@ func TestMergeUsage(t *testing.T) {
 		{"output is input", []string{"merge-people", mergeFixture, "I1", "I2", "-o", mergeFixture}, ExitUsage, "is the input file"},
 		{"too few arguments", []string{"merge-families", mergeFixture, "F1", "-o", out}, ExitUsage, "accepts 3 arg(s)"},
 		{"missing file", []string{"merge-people", "testdata/does-not-exist.ged", "I1", "I2", "-o", out}, ExitError, "does-not-exist.ged"},
+		{"same source", []string{"merge-sources", sourcesFixture, "S1", "@S1@", "-o", out}, ExitUsage, "keep and drop are both @S1@"},
+		{"missing source", []string{"merge-sources", sourcesFixture, "S1", "S99", "-o", out}, ExitError, "no such record: @S99@"},
+		{"repository to merge-sources", []string{"merge-sources", sourcesFixture, "S1", "R1", "-o", out}, ExitError, "@R1@ is a REPO record; want a source"},
+		{"same repository", []string{"merge-repositories", sourcesFixture, "R1", "R1", "-o", out}, ExitUsage, "keep and drop are both @R1@"},
+		{"missing repository", []string{"merge-repositories", sourcesFixture, "R9", "R1", "-o", out}, ExitError, "no such record: @R9@"},
+		{"source to merge-repositories", []string{"merge-repositories", sourcesFixture, "R1", "S1", "-o", out}, ExitError, "@S1@ is a SOUR record; want a repository"},
+		{"fold-events on merge-sources", []string{"merge-sources", "--fold-events", sourcesFixture, "S1", "S2", "-o", out}, ExitUsage, "unknown flag: --fold-events"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -397,11 +405,210 @@ func TestMergeUsage(t *testing.T) {
 }
 
 func TestMergeHelp(t *testing.T) {
-	for _, cmd := range []string{"merge-people", "merge-families"} {
+	for _, cmd := range []string{"merge-people", "merge-families", "merge-sources", "merge-repositories"} {
 		code, stdout, _ := run(t, cmd, "--help")
 		if code != ExitOK || !strings.Contains(stdout, "gedcom "+cmd+" family.ged @") {
 			t.Errorf("%s --help: exit = %d, lacks an example:\n%s", cmd, code, stdout)
 		}
+	}
+	// merge-sources says what it carries and what it reports.
+	_, stdout, _ := run(t, "merge-sources", "--help")
+	for _, want := range []string{"is carried", "not carried", "dropped       tag, lines, kept", "conflict      tag, lines", "repointed     xref, path"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("merge-sources --help lacks %q", want)
+		}
+	}
+	_, stdout, _ = run(t, "merge-repositories", "--help")
+	for _, want := range []string{"is carried", "reported as dropped", "collapsed     xref, path"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("merge-repositories --help lacks %q", want)
+		}
+	}
+}
+
+// sourcesFixture holds one parish register as @S1@ and @S2@, cited by Ada
+// (@I1@), Bert (@I2@) and a note, and as @S3@ under a differing title and
+// _APID, cited by @F1@. @S1@ and @S3@ name the archive @R1@, @S2@ names
+// @R2@, which is the same archive; @R3@ is another one.
+const sourcesFixture = "testdata/merge-sources.ged"
+
+// citationCount is the number of source citations, at any level, in the
+// GEDCOM file path.
+func citationCount(t *testing.T, path string) int {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(regexp.MustCompile(`(?m)^[1-9]\d* SOUR @`).FindAll(b, -1))
+}
+
+func TestMergeSources(t *testing.T) {
+	input, err := os.ReadFile(sourcesFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, stdout := runMerge(t, "merge-sources", sourcesFixture, "@S1@", "S2")
+	want := "moved\tPUBL\t1 PUBL Example Press\n" +
+		"moved\tREPO\t1 REPO @R2@\n" +
+		"moved\tNOTE\t1 NOTE Indexed copy\n" +
+		"deduplicated\tTITL\t1 TITL Example parish register\n" +
+		"deduplicated\tAUTH\t1 AUTH Example Parish\n" +
+		"deduplicated\t_APID\t1 _APID 1,1234::0\n" +
+		"repointed\t@I1@\tINDI.BIRT.SOUR\n" +
+		"repointed\t@I2@\tINDI.SOUR\n" +
+		"repointed\t@N1@\tNOTE.SOUR\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+	if after, _ := os.ReadFile(sourcesFixture); !bytes.Equal(after, input) {
+		t.Error("the input file changed")
+	}
+	assertValid(t, out)
+
+	// The dropped source is gone, and nothing points at it.
+	if code, _, stderr := run(t, "get", out, "@S2@"); code != ExitError || !strings.Contains(stderr, "no such record: @S2@") {
+		t.Errorf("get @S2@: exit = %d, stderr = %q", code, stderr)
+	}
+	doc, err := decodeFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pointedXRefs(doc)["@S2@"] {
+		t.Error("a record still points at @S2@")
+	}
+
+	// As many citations as before, their lines kept, now citing @S1@.
+	if before, after := citationCount(t, sourcesFixture), citationCount(t, out); before != after {
+		t.Errorf("%d citations before, %d after", before, after)
+	}
+	code, stdout, _ := run(t, "get", out, "@I1@", "@I2@", "@S1@")
+	for _, want := range []string{
+		"2 SOUR @S1@\n3 PAGE Entry 12\n1 SOUR @S1@\n2 PAGE Folio 3\n",
+		"1 SOUR @S1@\n2 PAGE Entry 40\n2 _APID 1,1234::40\n",
+		"0 @S1@ SOUR\n1 TITL Example parish register\n1 AUTH Example Parish\n1 _APID 1,1234::0\n1 REPO @R1@\n1 REPO @R2@\n1 PUBL Example Press\n1 NOTE Indexed copy\n",
+	} {
+		if code != ExitOK || !strings.Contains(stdout, want) {
+			t.Errorf("merged records lack %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// TestMergeSourcesConflicts merges two sources that differ: drop's TITL is
+// not carried and is reported as dropped, its _APID is carried beside keep's
+// and reported as a conflict.
+func TestMergeSourcesConflicts(t *testing.T) {
+	out, stdout := runMerge(t, "merge-sources", sourcesFixture, "S1", "S3")
+	want := "conflict\t_APID\t1 _APID 1,5678::0\n" +
+		"dropped\tTITL\t1 TITL Example parish register, 1800-1850\t1 TITL Example parish register\n" +
+		"deduplicated\tREPO\t1 REPO @R1@\n" +
+		"repointed\t@F1@\tFAM.SOUR\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+	assertValid(t, out)
+	if before, after := citationCount(t, sourcesFixture), citationCount(t, out); before != after {
+		t.Errorf("%d citations before, %d after", before, after)
+	}
+	code, stdout, _ := run(t, "get", out, "@S1@")
+	if want := "0 @S1@ SOUR\n1 TITL Example parish register\n1 AUTH Example Parish\n1 _APID 1,1234::0\n1 _APID 1,5678::0\n1 REPO @R1@\n"; code != ExitOK || stdout != want {
+		t.Errorf("get @S1@ = %q, want %q", stdout, want)
+	}
+
+	_, stdout = runMerge(t, "merge-sources", sourcesFixture, "--format", "json", "S1", "S3")
+	var got mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	titl := mergedConflict{Tag: "TITL", Lines: []string{"1 TITL Example parish register, 1800-1850"}, Kept: []string{"1 TITL Example parish register"}}
+	if got.Dropped == nil || !reflect.DeepEqual(*got.Dropped, []mergedConflict{titl}) {
+		t.Errorf("dropped = %+v, want [%+v]", got.Dropped, titl)
+	}
+	apid := mergedPart{Tag: "_APID", Lines: []string{"1 _APID 1,5678::0"}, Conflict: true}
+	if !reflect.DeepEqual(got.Moved, []mergedPart{apid}) || got.Candidates != nil {
+		t.Errorf("report = %+v, want moved = [%+v] and no candidates", got, apid)
+	}
+
+	// With nothing dropped the list is empty, not missing; merge-people has
+	// none.
+	_, stdout = runMerge(t, "merge-sources", sourcesFixture, "--format", "json", "S1", "S2")
+	if !strings.Contains(stdout, "\"dropped\": []") {
+		t.Errorf("merge-sources JSON lacks an empty dropped list:\n%s", stdout)
+	}
+	_, stdout = runMerge(t, "merge-people", mergeFixture, "--format", "json", "I1", "I2")
+	if strings.Contains(stdout, "\"dropped\"") {
+		t.Errorf("merge-people JSON has a dropped list:\n%s", stdout)
+	}
+}
+
+func TestMergeRepositories(t *testing.T) {
+	// Once @S2@ is merged, @S1@ names both @R1@ and @R2@: merging them
+	// leaves one REPO line.
+	sources, _ := runMerge(t, "merge-sources", sourcesFixture, "S1", "S2")
+	out, stdout := runMerge(t, "merge-repositories", sources, "R1", "R2")
+	want := "moved\tPHON\t1 PHON 555-0100\n" +
+		"deduplicated\tNAME\t1 NAME Example Archive\n" +
+		"collapsed\t@S1@\tSOUR.REPO\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+	assertValid(t, out)
+	doc, err := decodeFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.GetRecord("@R2@") != nil || pointedXRefs(doc)["@R2@"] {
+		t.Error("@R2@ is still in the output, or a record points at it")
+	}
+	code, stdout, _ := run(t, "get", out, "@S1@", "@R1@")
+	if code != ExitOK || strings.Count(stdout, "1 REPO @R1@\n") != 1 || !strings.Contains(stdout, "1 ADDR Archive Street\n1 PHON 555-0100\n") {
+		t.Errorf("merged records:\n%s", stdout)
+	}
+
+	// A different name is dropped, and reported with keep's.
+	_, stdout = runMerge(t, "merge-repositories", sourcesFixture, "--format", "json", "R1", "R3")
+	var got mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	name := mergedConflict{Tag: "NAME", Lines: []string{"1 NAME Example Library"}, Kept: []string{"1 NAME Example Archive"}}
+	if got.Dropped == nil || !reflect.DeepEqual(*got.Dropped, []mergedConflict{name}) {
+		t.Errorf("dropped = %+v, want [%+v]", got.Dropped, name)
+	}
+}
+
+// TestMergeSourcesKeepsUninvolvedRecords settles C2 for merge-sources and
+// merge-repositories: every record the merge does not touch is written byte
+// for byte.
+func TestMergeSourcesKeepsUninvolvedRecords(t *testing.T) {
+	input, err := os.ReadFile(sourcesFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		cmd      string
+		args     []string
+		involved []string // keep, drop and the records repointed
+	}{
+		{"merge-sources", []string{"S1", "S2"}, []string{"@S1@", "@S2@", "@I1@", "@I2@", "@N1@"}},
+		{"merge-repositories", []string{"R1", "R2"}, []string{"@R1@", "@R2@", "@S2@"}},
+	} {
+		t.Run(tt.cmd, func(t *testing.T) {
+			out, _ := runMerge(t, tt.cmd, sourcesFixture, tt.args...)
+			output, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, after := recordChunks(input), recordChunks(output)
+			for xref, chunk := range before {
+				if slices.Contains(tt.involved, xref) {
+					continue
+				}
+				if !bytes.Equal(after[xref], chunk) {
+					t.Errorf("%s changed:\n got %q\nwant %q", xref, after[xref], chunk)
+				}
+			}
+		})
 	}
 }
 

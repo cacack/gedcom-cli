@@ -97,6 +97,7 @@ var redactLivingLeaks = map[string][]string{}
 func TestRedactLiving(t *testing.T) {
 	all := []string{"@I1@", "@I2@", "@I3@", "@I4@", "@I5@", "@F1@", "@F2@", "@N1@"}
 	out := filepath.Join(t.TempDir(), "out.ged")
+	sources := livingWithSources(t)
 	// A changed record for Esme (@I5@), for put to replace hers with.
 	esme := filepath.Join(t.TempDir(), "esme.ged")
 	if err := os.WriteFile(esme, []byte("0 @I5@ INDI\n1 NAME Esme /Changed/\n1 SEX F\n1 FAMC @F2@\n"), 0o600); err != nil {
@@ -116,6 +117,9 @@ func TestRedactLiving(t *testing.T) {
 		{"list json", []string{"list", "--format", "json", living, "indi"}, ExitOK, []string{`"name": "Living"`, "Ann /Example/"}},
 		{"list plac", []string{"list", living, "plac"}, ExitOK, []string{"2\tOldtown, Example County\n"}},
 		{"list plac json", []string{"list", "--format", "json", living, "plac"}, ExitOK, []string{`"place": "Oldtown, Example County"`, `"count": 2`}},
+		// Only Ann's and Bob's lines, and the family of theirs, are counted.
+		{"list tags", []string{"list", living, "tags"}, ExitOK, []string{"2\tINDI.NAME\n", "1\tFAM.MARR.PLAC\n"}},
+		{"list values", []string{"list", "--format", "json", "--tag", "INDI.BIRT.PLAC", living, "values"}, ExitOK, []string{`"value": "Oldtown, Example County"`, `"count": 1`}},
 		{"list note", []string{"list", living, "note"}, ExitOK, []string{"@N1@\tLiving\n"}},
 		{"list note json", []string{"list", "--format", "json", living, "note"}, ExitOK, []string{`"xref": "@N1@"`, `"text": "Living"`}},
 		{"extract", []string{"extract", living, "I1", "I3", "I5", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living", "1 CHIL @I5@", "Ann /Example/", "1 JUN 1925"}},
@@ -124,6 +128,10 @@ func TestRedactLiving(t *testing.T) {
 		{"merge-people", []string{"merge-people", living, "@I3@", "@I5@", "-o", out}, ExitOK, []string{"conflict\tBIRT\tLiving", "repointed\t@F2@\tFAM.CHIL"}},
 		{"merge-people json", []string{"merge-people", "--format", "json", living, "@I1@", "@I3@", "-o", out}, ExitOK, []string{"\"lines\": [\n        \"Living\""}},
 		{"merge-families", []string{"merge-families", living, "@F1@", "@F2@", "-o", out}, ExitOK, []string{"conflict\tMARR\tLiving", "repointed\t@I5@\tINDI.FAMC"}},
+		// Source and repository records are not redacted; what the report
+		// says of the living people citing them is their xrefs.
+		{"merge-sources", []string{"merge-sources", sources, "@S1@", "@S2@", "-o", out}, ExitOK, []string{"repointed\t@I3@\tINDI.BIRT.SOUR", "1 TITL Example register"}},
+		{"merge-repositories", []string{"merge-repositories", sources, "@R1@", "@R2@", "-o", out}, ExitOK, []string{"repointed\t@S2@\tSOUR.REPO"}},
 		// living-changed.ged changes Ann's (@I1@) death date and Cleo's (@I3@)
 		// birthplace; living-died.ged also gives Cleo a death, so she is living
 		// in one file only and must still be hidden whichever side that is.
@@ -226,18 +234,38 @@ func TestConvertRedactLivingRenamedXRef(t *testing.T) {
 	}
 }
 
+// livingWithSources is the living fixture with two copies of one source
+// (@S1@, @S2@) and of one repository (@R1@, @R2@), the second of each named
+// from Cleo's birth and the second source, for the merge-sources and
+// merge-repositories rows.
+func livingWithSources(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(living)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(b), "2 PLAC Hiddenvale, Example County\n", "2 PLAC Hiddenvale, Example County\n2 SOUR @S2@\n", 1)
+	s = strings.Replace(s, "0 TRLR\n", "0 @S1@ SOUR\n1 TITL Example register\n1 REPO @R1@\n"+
+		"0 @S2@ SOUR\n1 TITL Example register\n1 REPO @R2@\n"+
+		"0 @R1@ REPO\n1 NAME Example Archive\n0 @R2@ REPO\n1 NAME Example Archive\n0 TRLR\n", 1)
+	return writeTemp(t, "living-sources.ged", s)
+}
+
 // TestRedactLivingWholeFiles checks the README's rule for the files written
 // with --redact-living: extract and combine redact theirs (TestRedactLiving
 // and TestCombineRedactLiving), and every other write command writes the
 // whole tree unredacted.
 func TestRedactLivingWholeFiles(t *testing.T) {
 	esme := writeTemp(t, "esme.ged", "0 @I5@ INDI\n1 NAME Esme /Changed/\n1 SEX F\n1 FAMC @F2@\n")
+	sources := livingWithSources(t)
 	for _, args := range [][]string{
 		{"put", living, esme},
 		{"delete", "--force", living, "@I5@"},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
 		{"merge-people", living, "@I3@", "@I5@"},
 		{"merge-families", living, "@F1@", "@F2@"},
+		{"merge-sources", sources, "@S1@", "@S2@"},
+		{"merge-repositories", sources, "@R1@", "@R2@"},
 		{"convert", living, "--to", "7.0"},
 	} {
 		t.Run(args[0], func(t *testing.T) {

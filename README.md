@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -44,8 +44,8 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | Command | What it does |
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
-| [`get`](#get) | Print records by xref |
-| [`list`](#list) | List the records of one type, or the places, one per line |
+| [`get`](#get) | Print records by xref, or the header |
+| [`list`](#list) | List the records of one type, or the places, tag paths or one tag's values, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
 | [`relatives`](#relatives) | Print people with their parents, siblings, spouses and children |
@@ -60,6 +60,8 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
+| [`merge-sources`](#merge-sources-and-merge-repositories) | Fold one source into another, writing a new file |
+| [`merge-repositories`](#merge-sources-and-merge-repositories) | Fold one repository into another, writing a new file |
 | [`combine`](#combine) | Join files into one, writing a new file |
 
 Each section below says what a command is for and shows a typical run.
@@ -96,11 +98,13 @@ each record. Its text output is what [`put`](#put) takes back.
 ```sh
 gedcom get family.ged @I1@
 gedcom get family.ged I1 F1          # the @ delimiters are optional
+gedcom get family.ged HEAD           # the header
 gedcom get --format json family.ged @I1@
 ```
 
 With `--format json` each record is gedcom-go's own shape for it, plus a
-`Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`).
+`Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`, and `HEAD` for the
+header). `put` takes records back, not the header.
 
 ### list
 
@@ -143,11 +147,32 @@ gedcom list family.ged plac
 1	Ohio SPRINGFIELD
 ```
 
+`list <file> tags` surveys what the file holds: each tag path (the record
+type and the tags down to the line, such as `INDI.BIRT.DATE`) with its number
+of lines, most used first. The counts cover every line but the header, the
+trailer and the records' level-0 lines. `--vendor` keeps only the paths with
+an extension tag (starting with `_`) in them. `list <file> values --tag
+<path>` lists the distinct values at one path with their counts, as `plac`
+does for places:
+
+```sh
+gedcom list --vendor family.ged tags
+gedcom list --tag INDI.EVEN.TYPE family.ged values
+```
+
+```text
+14	INDI._MILT
+14	INDI._MILT.DATE
+2	INDI._UID
+```
+
 ### ancestors and descendants
 
 Walk one person's line by generation (1 is parents or children, 2
 grandparents or grandchildren), one row per relative in `list indi`'s fields
-with the generation first:
+with the generation first. These and [`relatives`](#relatives) follow a
+family link only when both sides record it: a `FAMS` or `FAMC` on the person,
+and a `HUSB`, `WIFE` or `CHIL` naming them on the family.
 
 ```sh
 gedcom ancestors family.ged @I1@
@@ -217,6 +242,11 @@ warning (1)
   @I2@ line 19	MISSING_NAME	Individual record has no NAME	validate
 ```
 
+A family link only one record claims, such as a `FAMS` to a family that does
+not name the person as `HUSB` or `WIFE`, is an `UNRECIPROCATED_<tag>` warning,
+where `<tag>` is the pointer that is there. It is reported on the individual,
+with the family as related xref.
+
 A file with nothing to report prints `family.ged: no findings`. The exit code
 is `1` whenever the file has an error-severity finding, with the report still
 on stdout and a one-line summary on stderr.
@@ -242,6 +272,20 @@ gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, 
 ```
 
 Xrefs are each file's own, so `@I1@` can be a different person on each side.
+
+The score sums what the two records agree on: surname, given name, birth year
+and sex make up 0.9, and a full birth date, death year and places the rest. A
+value one record lacks costs nothing; a contradiction (two different known
+sexes, exact birth or death years more than two apart) rules the pair out.
+`duplicates --help` lists the weights. Only people with the same surname are
+compared, unless `--relatives` is given: it adds spouses' names (0.2) and
+shared children's names (0.1 each, up to two) to the score, and compares people
+who share a spouse's name whatever their surnames, so a woman under her
+married name in one file and her maiden name in the other is found:
+
+```sh
+gedcom duplicates --relatives old-export.ged family.ged
+```
 
 `--groups` reports groups instead of pairs: the connected components of the
 pairs at the chosen `--min-score`, so a person held twice in each file is one
@@ -474,6 +518,37 @@ is reported as `folded`, with the dropped event's lines and the kept event's
 once every fold into it is done. Events that differ in date stay separate and are reported as
 conflicts. `--help` gives the full rule.
 
+### merge-sources and merge-repositories
+
+`merge-sources` folds one source record into another: a file combined from
+two exports of one site often holds the same source many times. Every
+citation of the dropped source is repointed to the kept one, with its own
+lines (`PAGE`, `DATA`, vendor tags) untouched, and the dropped source is
+removed. `merge-repositories` does the same for two repositories, repointing
+the sources' `REPO` lines:
+
+```sh
+gedcom merge-sources family.ged @S1@ @S7@ -o merged.ged
+gedcom merge-repositories merged.ged @R1@ @R2@ -o merged2.ged
+gedcom merge-sources --format json family.ged S1 S7 -o merged.ged | jq '.dropped'
+```
+
+```text
+conflict	_APID	1 _APID 1,5678::0
+dropped	TITL	1 TITL Example parish register, 1800-1850	1 TITL Example parish register
+deduplicated	REPO	1 REPO @R1@
+repointed	@F1@	FAM.SOUR
+```
+
+The report is the merge-people one, with one more kind of line. A line a
+source or repository may hold only once (`TITL`, `AUTH`, `PUBL`, `NAME`,
+`ADDR` and so on) is carried when the kept record has none; when the kept
+record holds a different one, it stays, and the dropped record's is reported
+as `dropped`, beside the kept one, and is not in the output. Other lines
+(`NOTE`, `REFN`, vendor tags such as `_APID`) are carried, and reported as a
+`conflict` when the kept record already held that tag with other lines.
+`--help` lists what each command carries. Run `validate` on the result.
+
 ### combine
 
 Joins files into one, in the order given, and writes it to a new file. No
@@ -504,7 +579,7 @@ These hold for every command, so scripts and agents can rely on them:
 
 - **Results go to stdout, diagnostics to stderr.** Stderr is empty on
   success, except for a warning that a result is incomplete (`duplicates`,
-  or `combine` dropping a later file's differing header values) or that a
+  or `combine` dropping a later file's header values) or that a
   pointer was dropped (`extract`). A write command given `-o -` puts the file
   on stdout and its report on stderr; with `--format json` stderr then holds
   only that JSON report.
@@ -525,10 +600,10 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `delete`, `media add`, `merge-people`, `merge-families` and
+  too: `put`, `delete`, `media add`, the merge commands and
   `convert` edit or rewrite the whole tree and write it unredacted. Source,
   media, repository and submitter records are not redacted, even when a
-  hidden record cites them:
+  hidden record cites them, and neither is the header (`get HEAD`):
   check their titles, file names and addresses yourself. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or

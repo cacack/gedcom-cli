@@ -214,6 +214,50 @@ func TestValidateWarningsOnly(t *testing.T) {
 	}
 }
 
+// TestValidateUnreciprocatedLinks checks that a family link only one record
+// claims is a warning naming the individual, with the family as related xref,
+// in either direction.
+func TestValidateUnreciprocatedLinks(t *testing.T) {
+	const fixture = "testdata/unreciprocated.ged"
+	want := []finding{
+		{Code: "UNRECIPROCATED_FAMS", XRef: "@I1@", RelatedXRef: "@F1@", Line: 13},
+		{Code: "UNRECIPROCATED_FAMC", XRef: "@I4@", RelatedXRef: "@F1@", Line: 25},
+		{Code: "UNRECIPROCATED_HUSB", XRef: "@I5@", RelatedXRef: "@F2@", Line: 39},
+		{Code: "UNRECIPROCATED_WIFE", XRef: "@I6@", RelatedXRef: "@F2@", Line: 40},
+		{Code: "UNRECIPROCATED_CHIL", XRef: "@I7@", RelatedXRef: "@F2@", Line: 41},
+	}
+	code, report, _, stderr := validateJSON(t, "--min-severity", "info", fixture)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if report.Counts != (severityCounts{Warning: len(want)}) || len(report.Findings) != len(want) {
+		t.Fatalf("counts = %+v, findings = %+v", report.Counts, report.Findings)
+	}
+	for i, w := range want {
+		got := report.Findings[i]
+		if got.Source != sourceValidate || got.Severity != "warning" || got.Code != w.Code ||
+			got.XRef != w.XRef || got.RelatedXRef != w.RelatedXRef || got.Line != w.Line || got.Message == "" {
+			t.Errorf("finding %d = %+v, want %s on %s (related %s) at line %d", i, got, w.Code, w.XRef, w.RelatedXRef, w.Line)
+		}
+	}
+
+	code, stdout, _ := run(t, "validate", fixture)
+	if code != ExitOK || !strings.HasPrefix(stdout, "warning (5)\n") ||
+		!strings.Contains(stdout, "@I1@ line 13\tUNRECIPROCATED_FAMS\t") || !strings.Contains(stdout, "(related: @F1@)") {
+		t.Errorf("exit = %d, stdout:\n%s", code, stdout)
+	}
+
+	// Files whose family links all point back report none.
+	for _, file := range []string{sample, records, lineage} {
+		_, report, _, _ := validateJSON(t, "--min-severity", "info", file)
+		for _, f := range report.Findings {
+			if strings.HasPrefix(f.Code, "UNRECIPROCATED_") {
+				t.Errorf("%s: unexpected %+v", file, f)
+			}
+		}
+	}
+}
+
 func TestValidateSingleErrorSummary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "one.ged")
 	data := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n1 SUBM @U1@\n0 @U1@ SUBM\n1 NAME Test Submitter\n" +

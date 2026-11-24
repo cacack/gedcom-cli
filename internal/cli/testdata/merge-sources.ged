@@ -1,0 +1,55 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 BIRT
+2 DATE 1801
+2 SOUR @S2@
+3 PAGE Entry 12
+1 SOUR @S1@
+2 PAGE Folio 3
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bert /Example/
+1 SOUR @S2@
+2 PAGE Entry 40
+2 _APID 1,1234::40
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 SOUR @S3@
+0 @N1@ NOTE Transcribed from the register
+1 SOUR @S2@
+0 @S1@ SOUR
+1 TITL Example parish register
+1 AUTH Example Parish
+1 _APID 1,1234::0
+1 REPO @R1@
+0 @S2@ SOUR
+1 TITL Example parish register
+1 AUTH Example Parish
+1 PUBL Example Press
+1 _APID 1,1234::0
+1 REPO @R2@
+1 NOTE Indexed copy
+0 @S3@ SOUR
+1 TITL Example parish register, 1800-1850
+1 _APID 1,5678::0
+1 REPO @R1@
+0 @R1@ REPO
+1 NAME Example Archive
+1 ADDR Archive Street
+0 @R2@ REPO
+1 NAME Example Archive
+1 PHON 555-0100
+0 @R3@ REPO
+1 NAME Example Library
+0 TRLR

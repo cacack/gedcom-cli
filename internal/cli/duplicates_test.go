@@ -227,6 +227,83 @@ func TestDuplicatesMinScoreRounded(t *testing.T) {
 	}
 }
 
+// TestDuplicatesMissingValues checks that a value one record lacks costs no
+// more than a value both lack: the same full name scores 0.70 whether one
+// record has sex and a birth date the other lacks, or neither has them.
+func TestDuplicatesMissingValues(t *testing.T) {
+	const name = "1 NAME Ada Mae /Example/\n"
+	full := name + "1 SEX F\n1 BIRT\n2 DATE 3 MAR 1901\n"
+	placeOnly := name + "1 BIRT\n2 PLAC Example Town\n"
+	tests := []struct {
+		name string
+		a, b string
+	}{
+		{"one lacks sex and birth", full, placeOnly},
+		{"both lack sex and birth", name, name},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			a, b := filepath.Join(dir, "a.ged"), filepath.Join(dir, "b.ged")
+			for path, indi := range map[string]string{a: tt.a, b: tt.b} {
+				ged := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @I1@ INDI\n" + indi + "0 TRLR\n"
+				if err := os.WriteFile(path, []byte(ged), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, stdout, stderr := run(t, "duplicates", "--format", "json", a, b)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			var got []duplicatePair
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+				t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+			}
+			if len(got) != 1 || got[0].Score != 0.7 {
+				t.Errorf("pairs = %+v, want one pair scoring 0.7", got)
+			}
+		})
+	}
+}
+
+// The relatives fixtures hold one family in each file: Hester under her maiden
+// name in A and her married name in B, her husband Orrin, with no sex in B,
+// and their children Pell and Vesta.
+const (
+	duplicatesRelativesA = "testdata/duplicates-relatives-a.ged"
+	duplicatesRelativesB = "testdata/duplicates-relatives-b.ged"
+)
+
+// TestDuplicatesRelatives checks that --relatives reports the married-name and
+// maiden-name pair at the default score, from her given name, sex, spouse and
+// two children, and that without it the surnames keep her apart.
+func TestDuplicatesRelatives(t *testing.T) {
+	orrin := "@I2@\tOrrin /Married/\t\t\ttrue\t@I1@\tOrrin /Married/\t\t\ttrue\n"
+	hester := "0.80\t@I1@\tHester /Maiden/\t1852\t\tfalse\t@I2@\tHester /Married/\t\t\ttrue\n"
+	children := "0.70\t@I3@\tPell /Married/\t\t\ttrue\t@I3@\tPell /Married/\t\t\ttrue\n" +
+		"0.70\t@I4@\tVesta /Married/\t\t\ttrue\t@I4@\tVesta /Married/\t\t\ttrue\n"
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"without", nil, "0.70\t" + orrin + children},
+		{"with", []string{"--relatives"}, "0.90\t" + orrin + hester + children},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append(append([]string{"duplicates", "--reference-year", referenceYear}, tt.args...), duplicatesRelativesA, duplicatesRelativesB)
+			code, stdout, stderr := run(t, args...)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			if stdout != tt.want {
+				t.Errorf("stdout =\n%s\nwant\n%s", stdout, tt.want)
+			}
+		})
+	}
+}
+
 func TestDuplicatesNoPairsText(t *testing.T) {
 	code, stdout, stderr := run(t, "duplicates", "--min-score", "1", duplicatesA, duplicatesB)
 	if code != ExitOK || stdout != "" || stderr != "" {
@@ -251,7 +328,7 @@ func TestDuplicatesLimitWarning(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	if !strings.HasPrefix(stdout, "0.60\t@I1@\t") {
+	if !strings.HasPrefix(stdout, "0.70\t@I1@\t") {
 		t.Errorf("stdout = %q, want the pair", stdout)
 	}
 	if !strings.Contains(stderr, "gedcom: warning: ") || !strings.Contains(stderr, "DUPLICATE_DETECTION_LIMITED") {

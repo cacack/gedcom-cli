@@ -1,0 +1,42 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Abe /Mock/
+1 SEX M
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bert /Mock/
+1 SEX M
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Cora /Mock/
+1 SEX F
+1 FAMS @F1@
+0 @I4@ INDI
+1 NAME Dot /Mock/
+1 SEX F
+1 FAMC @F1@
+0 @I5@ INDI
+1 NAME Ed /Sample/
+1 SEX M
+0 @I6@ INDI
+1 NAME Fay /Sample/
+1 SEX F
+0 @I7@ INDI
+1 NAME Gil /Sample/
+1 SEX M
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I3@
+0 @F2@ FAM
+1 HUSB @I5@
+1 WIFE @I6@
+1 CHIL @I7@
+0 TRLR

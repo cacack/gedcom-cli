@@ -53,10 +53,27 @@ In JSON, each pair is an object with score, a and b, where a and b have list
 indi's keys. Detection sees both files whole; --redact-living hides what the
 pairs print about a presumed-living person.
 
+The score runs from 0 to 1: the sum of the weights of what the two records
+agree on. Surname 0.3; given name up to 0.3, by similarity; birth year 0.2,
+or 0.1 within two years; sex 0.1, also when either side has none; full birth
+date 0.04; death year 0.03; birth place 0.02; death place 0.01. Sex aside,
+a value one record lacks earns nothing, just as when both lack it. Nothing
+is subtracted: two different known sexes, exact birth or death years more than
+two apart, or given names less than 80% alike rule a pair out instead. By
+default only people with the same surname are compared.
+
+--relatives adds the people's relatives, read through the families they are a
+spouse in: a spouse's name on both sides adds 0.2 and each child's name both
+share adds 0.1, up to two, with the score capped at 1. People who share a
+spouse's name are compared whatever their surnames, so a woman under her
+married name in one file and her maiden name in the other is found, though
+without the surname's weight.
+
 Pairs are sorted by score, highest first, then by file order in A and in B.
-The score runs from 0 to 1 and is rounded to two decimals; --min-score drops
-pairs whose rounded score is below it. The library bounds its work on large surname groups and long
-given names; when it skipped or shortened any comparison, a warning on stderr
+The score is rounded to two decimals; --min-score drops pairs whose rounded
+score is below it. The library bounds its work on large surname groups and long
+given names, and under --relatives on large spouse-name groups and on the
+relatives it reads; when it skipped or shortened any comparison, a warning on stderr
 says so, and some pairs may be missing.
 
 --groups reports groups instead of pairs: the connected components of the
@@ -71,6 +88,7 @@ objects as without --groups.`,
 		Example: `  gedcom duplicates old-export.ged family.ged
   gedcom duplicates --min-score 0.9 old-export.ged family.ged
   gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, .b.xref]'
+  gedcom duplicates --relatives old-export.ged family.ged
   gedcom duplicates --groups old-export.ged family.ged
   gedcom duplicates --groups --format json old-export.ged family.ged | jq -r '.[0].b[]' | gedcom relatives family.ged -`,
 		Args: exactArgs(2),
@@ -90,6 +108,10 @@ objects as without --groups.`,
 			if err != nil {
 				return err
 			}
+			relatives, err := cmd.Flags().GetBool("relatives")
+			if err != nil {
+				return err
+			}
 			opts, err := readLivingOptions(cmd)
 			if err != nil {
 				return err
@@ -104,7 +126,7 @@ objects as without --groups.`,
 			}
 			// Detection sees the unredacted files; --redact-living then
 			// redacts the individuals in place, so the pairs print redacted.
-			report := findDuplicatesBetween(a, b, minScore)
+			report := findDuplicatesBetween(a, b, minScore, relatives)
 			for _, issue := range report.LimitIssues {
 				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s (%s)\n", oneLine(issue.Message), issue.Code)
 			}
@@ -135,16 +157,18 @@ objects as without --groups.`,
 		},
 	}
 	cmd.Flags().Bool("groups", false, "report groups of people joined by the pairs, instead of the pairs")
+	cmd.Flags().Bool("relatives", false, "also score spouses' and children's names, and compare people who share a spouse's name")
 	cmd.Flags().Float64("min-score", validator.DefaultDuplicateConfig().MinConfidence, "report only pairs scoring at least this, from 0 to 1")
 	return cmd
 }
 
 // findDuplicatesBetween runs the library's cross-document duplicate detection
-// with its default configuration. The library gates on the unrounded score, so
-// it is asked for a little below minScore; duplicatePairs then applies minScore
-// to the rounded score that is printed.
-func findDuplicatesBetween(a, b *gedcom.Document, minScore float64) validator.DuplicateReport {
+// with its default configuration, reading relatives when asked. The library
+// gates on the unrounded score, so it is asked for a little below minScore;
+// duplicatePairs then applies minScore to the rounded score that is printed.
+func findDuplicatesBetween(a, b *gedcom.Document, minScore float64, relatives bool) validator.DuplicateReport {
 	config := validator.DefaultDuplicateConfig()
+	config.CompareRelatives = relatives
 	config.MinConfidence = minScore - scoreSlack
 	if config.MinConfidence <= 0 {
 		// The library reads 0 as "use the default"; ZeroThreshold means 0.

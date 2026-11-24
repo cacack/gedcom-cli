@@ -188,6 +188,97 @@ func TestGetJSONUntypedRecord(t *testing.T) {
 	}
 }
 
+const recordsHeader = `0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+`
+
+// TestGetHeaderText checks that HEAD prints the header's lines as the file
+// has them, in argument order among records.
+func TestGetHeaderText(t *testing.T) {
+	if !strings.HasPrefix(readFile(t, records), recordsHeader) {
+		t.Fatal("recordsHeader is not the fixture's header")
+	}
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"header alone", []string{"HEAD"}, recordsHeader},
+		{"argument order", []string{"@I1@", "HEAD", "F1"}, recordI1 + recordsHeader + recordF1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, stdout, stderr := run(t, append([]string{"get", records}, tt.args...)...)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			if stdout != tt.want {
+				t.Errorf("stdout =\n%s\nwant\n%s", stdout, tt.want)
+			}
+		})
+	}
+}
+
+// TestGetHeaderJSON checks that the header is the library's Header, with Type
+// HEAD, in argument order among records.
+func TestGetHeaderJSON(t *testing.T) {
+	code, stdout, stderr := run(t, "get", "--format", "json", records, "@I1@", "HEAD")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []struct {
+		Type, XRef, SourceSystem, Submitter string
+		Tags                                []struct{ Tag string }
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array: %v\n%s", err, stdout)
+	}
+	if len(got) != 2 || got[0].XRef != "@I1@" {
+		t.Fatalf("unexpected output:\n%s", stdout)
+	}
+	header := got[1]
+	if header.Type != "HEAD" || header.SourceSystem != "gedcom-cli-test" || header.Submitter != "@U1@" || len(header.Tags) != 6 {
+		t.Errorf("header = %+v", header)
+	}
+	if !strings.Contains(stdout, "{\n    \"Type\": \"HEAD\",\n    \"Version\": \"5.5.1\",") {
+		t.Errorf("header does not start with its Type:\n%s", stdout)
+	}
+}
+
+// TestGetHeaderNotRedacted checks that --redact-living prints the header as
+// the file has it, as the help says.
+func TestGetHeaderNotRedacted(t *testing.T) {
+	_, plain, _ := run(t, "get", living, "HEAD")
+	code, redacted, stderr := run(t, "get", "--redact-living", living, "HEAD")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if redacted != plain || !strings.HasPrefix(readFile(t, living), plain) {
+		t.Errorf("redacted header =\n%s\nwant the file's\n%s", redacted, plain)
+	}
+}
+
+// TestGetHeaderXRef checks that only HEAD names the header, @HEAD@ being an
+// xref, and that a missing xref beside HEAD prints nothing.
+func TestGetHeaderXRef(t *testing.T) {
+	for _, arg := range []string{"@HEAD@", "head"} {
+		code, stdout, stderr := run(t, "get", records, arg)
+		if code != ExitError || stdout != "" || !strings.Contains(stderr, "no such record: @"+strings.Trim(arg, "@")+"@\n") {
+			t.Errorf("%s: exit = %d, stdout = %q, stderr = %q", arg, code, stdout, stderr)
+		}
+	}
+	// A missing xref fails before the header is printed.
+	code, stdout, stderr := run(t, "get", records, "HEAD", "@NOPE@")
+	if code != ExitError || stdout != "" || !strings.Contains(stderr, "no such record: @NOPE@\n") {
+		t.Errorf("HEAD @NOPE@: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+}
+
 func TestGetMissing(t *testing.T) {
 	for _, format := range []string{formatText, formatJSON} {
 		t.Run(format, func(t *testing.T) {
