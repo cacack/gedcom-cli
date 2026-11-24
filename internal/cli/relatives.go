@@ -52,11 +52,11 @@ Text output is tab-separated with no header. The fields are:
 relationship is self, parent, sibling, half-sibling, spouse or child. family
 is the family the relative comes through: for a parent or sibling, a family
 the person is a child of; for a half-sibling, the parent's other family; for a
-spouse or child, a family that names the person as husband or wife (a FAMS
-link the family does not return is ignored). The person's own line has no
-family. A person in several families (two marriages, birth and adoptive
-parents) has a parent, spouse or child line in each, so a relative can appear
-twice; a sibling is listed once, under the first family that links them.
+spouse or child, a family the person is a husband or wife in. The person's
+own line has no family. A person in several families (two marriages, birth
+and adoptive parents) has a parent, spouse or child line in each, so a
+relative can appear twice; a sibling is listed once, under the first family
+that links them.
 
 pedigree is the PEDI of the child's link to that family (birth, adopted,
 foster, ...) as written, or empty when the file gives none: the person's own
@@ -74,7 +74,9 @@ xref, or with "-", each person is reported once, in the order first given:
 text output prints each person's lines in turn, each starting with its self
 line, and --format json prints an array of the objects above, even when stdin
 held a single xref. A script whose list may hold one xref should send it on
-stdin to get an array every time.`,
+stdin to get an array every time.
+
+` + linkRule,
 		Example: `  gedcom relatives family.ged @I1@
   gedcom relatives family.ged I1 | awk -F'\t' '$1 == "child"'
   gedcom relatives --format json family.ged I1 | jq '.relatives[] | select(.relationship == "parent")'
@@ -156,7 +158,7 @@ func relatives(doc *gedcom.Document, living map[*gedcom.Individual]bool, person 
 		}
 		add(sib.Individual, relationship, sib.Family, pedigreeIn(sib.Individual, sib.Family))
 	}
-	families := spouseFamilies(doc, person)
+	families := person.FamiliesAsSpouse(doc)
 	for _, fam := range families {
 		if spouse := otherSpouse(doc, fam, person); spouse != nil {
 			add(spouse, relSpouse, fam, "")
@@ -168,19 +170,6 @@ func relatives(doc *gedcom.Document, living map[*gedcom.Individual]bool, person 
 		}
 	}
 	return rows
-}
-
-// spouseFamilies is person's FAMS families that name person as husband or
-// wife. A one-sided FAMS link would otherwise report another couple's members
-// as person's spouse and children.
-func spouseFamilies(doc *gedcom.Document, person *gedcom.Individual) []*gedcom.Family {
-	var families []*gedcom.Family
-	for _, fam := range person.FamiliesAsSpouse(doc) {
-		if fam.Husband == person.XRef || fam.Wife == person.XRef {
-			families = append(families, fam)
-		}
-	}
-	return families
 }
 
 // otherSpouse is the spouse in fam who is not person, or nil when the family

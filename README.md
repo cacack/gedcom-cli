@@ -147,7 +147,9 @@ gedcom list family.ged plac
 
 Walk one person's line by generation (1 is parents or children, 2
 grandparents or grandchildren), one row per relative in `list indi`'s fields
-with the generation first:
+with the generation first. These and [`relatives`](#relatives) follow a
+family link only when both sides record it: a `FAMS` or `FAMC` on the person,
+and a `HUSB`, `WIFE` or `CHIL` naming them on the family.
 
 ```sh
 gedcom ancestors family.ged @I1@
