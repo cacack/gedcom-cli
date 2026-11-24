@@ -251,7 +251,7 @@ func TestDuplicatesLimitWarning(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	if !strings.HasPrefix(stdout, "0.60\t@I1@\t") {
+	if !strings.HasPrefix(stdout, "0.70\t@I1@\t") {
 		t.Errorf("stdout = %q, want the pair", stdout)
 	}
 	if !strings.Contains(stderr, "gedcom: warning: ") || !strings.Contains(stderr, "DUPLICATE_DETECTION_LIMITED") {
