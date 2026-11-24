@@ -22,6 +22,15 @@ tar -xzf gedcom_*_linux_amd64.tar.gz gedcom
 sudo mv gedcom /usr/local/bin/
 ```
 
+`checksums.txt` comes from the same release, so it shows the download is intact,
+not where it was built. Releases after v0.4.0 carry a build-provenance
+attestation; verify an archive against it with the
+[GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify gedcom_*_linux_amd64.tar.gz --repo cacack/gedcom-cli
+```
+
 **With Go** (1.25+):
 
 ```sh
