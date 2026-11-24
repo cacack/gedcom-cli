@@ -30,6 +30,10 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // (TestDeleteRemovesOnlyTheRecord). merge-people and merge-families always
 // request a change, so TestMergeKeepsUninvolvedRecords holds them to C2 instead.
 var writeCommands = map[string]func(t *testing.T, in, out string) []string{
+	// Combining one file joins nothing to it.
+	"combine": func(_ *testing.T, in, out string) []string {
+		return []string{"combine", "--strategy", "zip", in, "-o", out}
+	},
 	"convert": func(_ *testing.T, in, out string) []string {
 		return []string{"convert", in, "--to", "5.5.1", "-o", out}
 	},
