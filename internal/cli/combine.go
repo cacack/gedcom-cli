@@ -13,11 +13,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// combinePrefix is the --strategy that takes --prefix.
+const combinePrefix = "prefix"
+
 // combineStrategies maps each --strategy to the library's collision strategy.
+// prefix renames every record of a later file before combining it (see
+// combineDocuments), so an xref that still collides is an error.
 var combineStrategies = map[string]merge.CollisionStrategy{
-	"zip":      merge.ZipSharedXRefs,
-	"prefix":   merge.PrefixDoc2,
-	"renumber": merge.RenumberDoc2,
+	"zip":         merge.ZipSharedXRefs,
+	combinePrefix: merge.ErrorOnCollision,
+	"renumber":    merge.RenumberDoc2,
 }
 
 // combineReport is what combine prints: the file written, what it holds, what
@@ -79,15 +84,21 @@ merged: a person in two unrelated files stays two people.
             first file that holds them, and joined pointer lines in each
             file's line order, so the output holds the master's records but
             not always in the master's order.
-  prefix    The files are unrelated trees. Each colliding xref of a later
-            file gets that file's --prefix, so its origin stays visible: with
-            --prefix B_, a second file's @I1@ becomes @B_I1@. Give one
-            prefix per file after the first.
-  renumber  As prefix, but a colliding xref gets the next free number of
-            its kind instead (@I1@ becomes @I43@).
+  prefix    The files are unrelated trees. Every record of each later file
+            gets that file's --prefix, whether or not its xref collides, so
+            a record's origin can be read from its xref: with --prefix B_, a
+            second file's @I1@ becomes @B_I1@. The first file's xrefs are
+            kept. Give one prefix per file after the first. A prefixed xref
+            that an earlier file already holds is an error: the command
+            exits 1, and nothing is written.
+  renumber  The files are unrelated trees. Only the colliding xrefs of a
+            later file are renamed, each to the next free number of its
+            kind (@I1@ becomes @I43@). Every other xref is kept.
 
-The report lists each input's renamed xrefs (JSON "remapped", old to new).
-With prefix and renumber every record of every input is kept.
+The report lists each input's renamed xrefs (JSON "remapped", old to new):
+with prefix, every xref of each file after the first; with renumber, the
+colliding ones; with zip, none. With prefix and renumber every record of
+every input is kept.
 
 The files must share a GEDCOM version (5.5, 5.5.1 or 7.0); mixing them
 fails. They may declare different encodings (ANSEL, UTF-8, ...): each is
@@ -124,9 +135,11 @@ one UTF-8 file, combine writes it back exactly as it was read.
 			switch {
 			case !ok:
 				return usageError{fmt.Errorf(`invalid --strategy %q: want "zip", "prefix" or "renumber"`, name)}
-			case strategy == merge.PrefixDoc2 && len(prefixes) != len(args)-1:
+			case name == combinePrefix && len(prefixes) != len(args)-1:
 				return usageError{fmt.Errorf("--strategy prefix needs one --prefix per file after the first: got %d, want %d", len(prefixes), len(args)-1)}
-			case strategy != merge.PrefixDoc2 && len(prefixes) > 0:
+			case name == combinePrefix && slices.Contains(prefixes, ""):
+				return usageError{errors.New("--prefix must not be empty")}
+			case name != combinePrefix && len(prefixes) > 0:
 				return usageError{errors.New("--prefix needs --strategy prefix")}
 			}
 			docs := make([]*gedcom.Document, len(args))
@@ -137,7 +150,7 @@ one UTF-8 file, combine writes it back exactly as it was read.
 				}
 				docs[i] = res.Document
 			}
-			doc, report, err := combineDocuments(args, docs, strategy, prefixes)
+			doc, report, err := combineDocuments(args, docs, name, strategy, prefixes)
 			if err != nil {
 				return err
 			}
@@ -177,10 +190,12 @@ one UTF-8 file, combine writes it back exactly as it was read.
 	return cmd
 }
 
-// combineDocuments joins docs in order with merge.Combine. A zip conflict does
-// not stop it: every input is compared, so the report names every conflict,
-// and the document returned must then not be written.
-func combineDocuments(files []string, docs []*gedcom.Document, strategy merge.CollisionStrategy, prefixes []string) (*gedcom.Document, combineReport, error) {
+// combineDocuments joins docs in order with merge.Combine. With the prefix
+// strategy (name is combinePrefix), each doc after the first is first renamed
+// whole with its prefix, by merge.RemapXRefs. A zip conflict does not stop it:
+// every input is compared, so the report names every conflict, and the
+// document returned must then not be written.
+func combineDocuments(files []string, docs []*gedcom.Document, name string, strategy merge.CollisionStrategy, prefixes []string) (*gedcom.Document, combineReport, error) {
 	report := combineReport{
 		Inputs:          make([]combineInput, len(docs)),
 		HeaderConflicts: []combineHeaderConflict{},
@@ -203,15 +218,24 @@ func combineDocuments(files []string, docs []*gedcom.Document, strategy merge.Co
 			// written when there is one.
 			KeepFirstOnConflict: true,
 		}
-		if strategy == merge.PrefixDoc2 {
-			opts.Prefix = prefixes[i-1]
+		doc := docs[i]
+		if name == combinePrefix {
+			prefix := prefixes[i-1]
+			prefixed, mapping, err := merge.RemapXRefs(doc, func(old string) string { return "@" + prefix + old[1:] })
+			if err != nil {
+				return nil, report, fmt.Errorf("combine %s: %w", files[i], err)
+			}
+			doc = prefixed
+			report.Inputs[i].Remapped = mapping
 		}
-		combined, res, err := merge.Combine(out, docs[i], opts)
+		combined, res, err := merge.Combine(out, doc, opts)
 		if err != nil {
 			return nil, report, fmt.Errorf("combine %s: %w", files[i], err)
 		}
 		out = combined
-		report.Inputs[i].Remapped = res.RemappedXRefs
+		if name != combinePrefix {
+			report.Inputs[i].Remapped = res.RemappedXRefs
+		}
 		for _, c := range res.HeaderConflicts {
 			if c.Field == "Encoding" {
 				continue // reported per input, and never written

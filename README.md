@@ -413,8 +413,9 @@ of families the kept person is now a spouse in with the same partner, which
 Joins files into one, in the order given, and writes it to a new file. No
 people are merged. The strategy says what to do with an xref two files share:
 `zip` for files cut from one master by [`extract`](#extract), where a shared
-xref is the same record; `prefix` or `renumber` for unrelated trees, where a
-later file's colliding xrefs are renamed:
+xref is the same record; `prefix` or `renumber` for unrelated trees. `prefix`
+renames every record of each later file, so a record's origin can be read
+from its xref; `renumber` renames only a later file's colliding xrefs:
 
 ```sh
 gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
@@ -424,7 +425,9 @@ gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
 ```text
 wrote both.ged: 412 records, 260 individuals, 98 families
 cousin.ged	@F1@	@C_F1@
+cousin.ged	@F2@	@C_F2@
 cousin.ged	@I1@	@C_I1@
+...
 ```
 
 Each renamed xref is a line (file, old, new).

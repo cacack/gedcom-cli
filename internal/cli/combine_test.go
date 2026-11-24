@@ -207,37 +207,80 @@ func TestCombineZipConflict(t *testing.T) {
 	}
 }
 
+// recordXRefs returns the xref of every record of a GEDCOM file, sorted.
+func recordXRefs(t *testing.T, path string) []string {
+	t.Helper()
+	var xrefs []string
+	for key := range gedcomRecords(t, path) {
+		if fields := strings.Fields(key); len(fields) > 1 && strings.HasPrefix(fields[1], "@") {
+			xrefs = append(xrefs, fields[1])
+		}
+	}
+	slices.Sort(xrefs)
+	return xrefs
+}
+
+// prefixed maps each xref to itself with the prefix, as --strategy prefix
+// renames it.
+func prefixed(xrefs []string, prefix string) map[string]string {
+	renamed := make(map[string]string, len(xrefs))
+	for _, xref := range xrefs {
+		renamed[xref] = "@" + prefix + xref[1:]
+	}
+	return renamed
+}
+
+// TestCombinePrefix combines minimal, minimal again and the combine fixture.
+// Of the fixture's 15 xrefs, @U1@, @I1@, @I2@ and @F1@ collide with minimal's
+// and the other 11 collide with nothing: all 15 get the fixture's prefix.
 func TestCombinePrefix(t *testing.T) {
+	first, later := recordXRefs(t, sample), recordXRefs(t, combineFixture)
+	if len(first) != 4 || len(later) != 15 {
+		t.Fatalf("fixtures hold %d and %d xrefs, want 4 and 15", len(first), len(later))
+	}
 	out := filepath.Join(t.TempDir(), "all.ged")
 	code, stdout, stderr := run(t, "combine", "--strategy", "prefix", "--prefix", "B_,C_", sample, sample, combineFixture, "-o", out)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	// minimal holds 4 records, combine 15; every one is kept.
-	if want := "wrote " + out + ": 23 records, 12 individuals, 5 families\n"; !strings.HasPrefix(stdout, want) {
-		t.Errorf("stdout = %q, want it to start %q", stdout, want)
-	}
-	for _, want := range []string{sample + "\t@I1@\t@B_I1@\n", sample + "\t@F1@\t@B_F1@\n", sample + "\t@U1@\t@B_U1@\n", combineFixture + "\t@I1@\t@C_I1@\n"} {
-		if !strings.Contains(stdout, want) {
-			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+	// minimal holds 4 records, combine 15; every one is kept, and every one
+	// of a later file is a line of the report.
+	want := "wrote " + out + ": 23 records, 12 individuals, 5 families\n"
+	wantXRefs := slices.Clone(first)
+	for _, in := range []struct {
+		file, prefix string
+		xrefs        []string
+	}{{sample, "B_", first}, {combineFixture, "C_", later}} {
+		renamed := prefixed(in.xrefs, in.prefix)
+		for _, old := range in.xrefs {
+			want += in.file + "\t" + old + "\t" + renamed[old] + "\n"
+			wantXRefs = append(wantXRefs, renamed[old])
 		}
 	}
-	// @F3@ collides with nothing, so it keeps its xref.
-	if strings.Contains(stdout, combineFixture+"\t@F3@") {
-		t.Errorf("stdout renames @F3@:\n%s", stdout)
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	slices.Sort(wantXRefs)
+	if got := recordXRefs(t, out); !reflect.DeepEqual(got, wantXRefs) {
+		t.Errorf("output xrefs = %v, want %v", got, wantXRefs)
 	}
 	records := gedcomRecords(t, out)
-	for _, want := range []string{"0 @I1@ INDI", "0 @B_I1@ INDI", "0 @C_I1@ INDI", "0 @F3@ FAM", "0 @B_F1@ FAM", "0 @C_F1@ FAM"} {
-		if _, ok := records[want]; !ok {
-			t.Errorf("output lacks %q", want)
+	// The first file's records are as they were.
+	for key, lines := range gedcomRecords(t, sample) {
+		if key != "0 HEAD" && key != "0 TRLR" && !reflect.DeepEqual(records[key], lines) {
+			t.Errorf("%s = %q, want %q", key, records[key], lines)
 		}
 	}
-	// @I3@ collides with nothing either, but points to @F1@, which did.
-	if got := records["0 @I3@ INDI"]; !slices.Contains(got, "1 FAMC @C_F1@") || !slices.Contains(got, "1 FAMS @F3@") {
-		t.Errorf("@I3@ = %q: its pointers were not remapped", got)
+	// Pointers follow their records, colliding (@F1@) or not (@F3@).
+	if got := records["0 @C_I3@ INDI"]; !slices.Contains(got, "1 FAMC @C_F1@") || !slices.Contains(got, "1 FAMS @C_F3@") {
+		t.Errorf("@C_I3@ = %q: its pointers were not remapped", got)
+	}
+	code, stdout, stderr = run(t, "validate", out)
+	if code != ExitOK || stderr != "" || !strings.HasSuffix(stdout, ": no findings\n") {
+		t.Errorf("validate: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 
-	code, stdout, stderr = run(t, "combine", "--format", "json", "--strategy", "prefix", "--prefix", "B_", sample, sample, "-o", out)
+	code, stdout, stderr = run(t, "combine", "--format", "json", "--strategy", "prefix", "--prefix", "C_", sample, combineFixture, "-o", out)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
 	}
@@ -245,12 +288,29 @@ func TestCombinePrefix(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
-	want := []combineInput{
+	wantInputs := []combineInput{
 		{File: sample, Encoding: "UTF-8", Remapped: map[string]string{}},
-		{File: sample, Encoding: "UTF-8", Remapped: map[string]string{"@U1@": "@B_U1@", "@I1@": "@B_I1@", "@I2@": "@B_I2@", "@F1@": "@B_F1@"}},
+		{File: combineFixture, Encoding: "UTF-8", Remapped: prefixed(later, "C_")},
 	}
-	if got.Records != 8 || !reflect.DeepEqual(got.Inputs, want) {
-		t.Errorf("records = %d, inputs = %+v\nwant 8 and %+v", got.Records, got.Inputs, want)
+	if got.Records != 19 || !reflect.DeepEqual(got.Inputs, wantInputs) {
+		t.Errorf("records = %d, inputs = %+v\nwant 19 and %+v", got.Records, got.Inputs, wantInputs)
+	}
+}
+
+// TestCombinePrefixCollision checks that a prefixed xref an earlier file
+// already holds fails the command: the first file's @B_I1@ is what the
+// second's @I1@ becomes.
+func TestCombinePrefixCollision(t *testing.T) {
+	first := writeTemp(t, "first.ged", strings.ReplaceAll(readText(t, sample), "@I1@", "@B_I1@"))
+	out := filepath.Join(t.TempDir(), "both.ged")
+	for _, format := range []string{"text", "json"} {
+		code, stdout, stderr := run(t, "combine", "--format", format, "--strategy", "prefix", "--prefix", "B_", first, sample, "-o", out)
+		if want := "gedcom: combine " + sample + ": merge: xref collision: @B_I1@\n"; code != ExitError || stdout != "" || stderr != want {
+			t.Errorf("%s: exit = %d, stdout = %q, stderr = %q; want exit %d and %q", format, code, stdout, stderr, ExitError, want)
+		}
+		if _, err := os.Stat(out); !os.IsNotExist(err) {
+			t.Errorf("%s: output was written: %v", format, err)
+		}
 	}
 }
 
@@ -355,6 +415,7 @@ func TestCombineErrors(t *testing.T) {
 		{"output is input", []string{"combine", "--strategy", "zip", sample, input, "-o", input}, ExitUsage, "is the input file"},
 		{"no prefix", []string{"combine", "--strategy", "prefix", sample, sample, "-o", out}, ExitUsage, "got 0, want 1"},
 		{"too many prefixes", []string{"combine", "--strategy", "prefix", "--prefix", "B_,C_", sample, sample, "-o", out}, ExitUsage, "got 2, want 1"},
+		{"empty prefix", []string{"combine", "--strategy", "prefix", "--prefix", "B_,", sample, sample, sample, "-o", out}, ExitUsage, "--prefix must not be empty"},
 		{"prefix without prefix strategy", []string{"combine", "--strategy", "zip", "--prefix", "B_", sample, sample, "-o", out}, ExitUsage, "--prefix needs --strategy prefix"},
 		{"missing file", []string{"combine", "--strategy", "zip", sample, "testdata/nope.ged", "-o", out}, ExitError, "nope.ged"},
 	}
@@ -376,6 +437,8 @@ func TestCombineHelp(t *testing.T) {
 	for _, want := range []string{
 		"--strategy zip -o", "--strategy prefix --prefix C_", "--strategy renumber -o",
 		"must share a GEDCOM version", "the output is always UTF-8",
+		"Every record of each later file", "Only the colliding xrefs", "Nothing is renamed",
+		"with prefix, every xref of each file after the first",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
