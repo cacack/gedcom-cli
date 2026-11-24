@@ -25,9 +25,10 @@ type listOptions struct {
 	path   []string
 }
 
-// row is one listed record, place, tag path or value. Its JSON form is the row struct itself;
-// fields gives the same values, in the same order, for text output. placRow
-// alone has JSON keys, its coordinates, that text output leaves out.
+// row is one listed record, place, tag path or value. Its JSON form is the
+// row struct itself; fields gives the same values, in the same order, for text
+// output. placRow alone has JSON keys, its coordinates, that text output
+// leaves out.
 type row interface{ fields() []string }
 
 type indiRow struct {
@@ -290,36 +291,26 @@ func rowsOf[T any](entities []T, limit int, toRow func(T) row) []row {
 // limit of 0 means all of them. gedcom-go has no call that enumerates places,
 // so this walks the raw lines, as media check does for FILE.
 func placeRows(doc *gedcom.Document, limit int) []row {
-	places := map[string]*placRow{}
+	counts := map[string]int{}
+	coordinates := map[string]placRow{}
 	for _, record := range doc.Records {
 		for i, tag := range record.Tags {
 			if tag == nil || tag.Tag != "PLAC" || strings.TrimSpace(tag.Value) == "" {
 				continue
 			}
-			place := places[tag.Value]
-			if place == nil {
-				place = &placRow{Place: tag.Value}
-				places[tag.Value] = place
-			}
-			place.Count++
-			if place.Latitude == "" {
+			counts[tag.Value]++
+			if _, ok := coordinates[tag.Value]; !ok {
 				if latitude, longitude := placeCoordinates(record.Tags[i:]); latitude != "" && longitude != "" {
-					place.Latitude, place.Longitude = latitude, longitude
+					coordinates[tag.Value] = placRow{Latitude: latitude, Longitude: longitude}
 				}
 			}
 		}
 	}
-	sorted := make([]*placRow, 0, len(places))
-	for _, place := range places {
-		sorted = append(sorted, place)
-	}
-	slices.SortFunc(sorted, func(a, b *placRow) int {
-		if a.Count != b.Count {
-			return b.Count - a.Count
-		}
-		return strings.Compare(a.Place, b.Place)
+	return countedRows(counts, limit, func(place string, count int) row {
+		p := coordinates[place]
+		p.Count, p.Place = count, place
+		return p
 	})
-	return rowsOf(sorted, limit, func(p *placRow) row { return *p })
 }
 
 // placeCoordinates returns the LATI and LONG of the MAP under tags[0], a PLAC
@@ -350,7 +341,8 @@ func placeCoordinates(tags []*gedcom.Tag) (latitude, longitude string) {
 // most limit of them, most used first and then in byte order; a limit of 0
 // means all of them. With vendor, only paths holding an extension tag are
 // counted. A line's path is its record's type, the tags of the lines it sits
-// under (by Level) and its own tag.
+// under (by Level) and its own tag. gedcom-go has no call that enumerates tag
+// paths, so this walks the raw lines, as placeRows does.
 func tagRows(doc *gedcom.Document, vendor bool, limit int) []row {
 	counts := map[string]int{}
 	for _, record := range doc.Records {

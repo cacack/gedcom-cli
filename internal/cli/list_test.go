@@ -469,6 +469,20 @@ func TestListTagsVendor(t *testing.T) {
 	}
 }
 
+func TestListTagsSkippedLevel(t *testing.T) {
+	// gedcom-go reads a 3 directly under a 1 as a 2, so tags and values agree
+	// on its path.
+	path := writeTemp(t, "skipped.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n0 @I1@ INDI\n1 BIRT\n3 DATE 1900\n0 TRLR\n")
+	code, stdout, stderr := run(t, "list", path, "tags")
+	if want := "1\tINDI.BIRT\n1\tINDI.BIRT.DATE\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("tags: exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+	code, stdout, stderr = run(t, "list", "--tag", "INDI.BIRT.DATE", path, "values")
+	if want := "1\t1900\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("values: exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+}
+
 func TestListTagsLimitAndJSON(t *testing.T) {
 	code, stdout, stderr := run(t, "list", "--format", "json", "--limit", "3", writeTagged(t), "tags")
 	if code != ExitOK || stderr != "" {
