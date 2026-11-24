@@ -3,7 +3,7 @@ module github.com/cacack/gedcom-cli
 go 1.25.0
 
 require (
-	github.com/cacack/gedcom-go/v3 v3.10.1-0.20261124015810-0a2a570cba92
+	github.com/cacack/gedcom-go/v3 v3.11.0
 	github.com/spf13/cobra v1.10.2
 )
 
