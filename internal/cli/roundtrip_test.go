@@ -60,9 +60,11 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 // requested to the test that holds it to C2 instead: only the lines of the
 // records it changes may differ.
 var changingWriteCommands = map[string]string{
-	"delete":         "TestDeleteRemovesOnlyTheRecord",
-	"merge-people":   "TestMergeKeepsUninvolvedRecords",
-	"merge-families": "TestMergeKeepsUninvolvedRecords",
+	"delete":             "TestDeleteRemovesOnlyTheRecord",
+	"merge-people":       "TestMergeKeepsUninvolvedRecords",
+	"merge-families":     "TestMergeKeepsUninvolvedRecords",
+	"merge-sources":      "TestMergeSourcesKeepsUninvolvedRecords",
+	"merge-repositories": "TestMergeSourcesKeepsUninvolvedRecords",
 }
 
 // TestWriteCommandsListed checks that the commands with an --output flag are

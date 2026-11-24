@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -60,6 +60,8 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
+| [`merge-sources`](#merge-sources-and-merge-repositories) | Fold one source into another, writing a new file |
+| [`merge-repositories`](#merge-sources-and-merge-repositories) | Fold one repository into another, writing a new file |
 | [`combine`](#combine) | Join files into one, writing a new file |
 
 Each section below says what a command is for and shows a typical run.
@@ -474,6 +476,37 @@ is reported as `folded`, with the dropped event's lines and the kept event's
 once every fold into it is done. Events that differ in date stay separate and are reported as
 conflicts. `--help` gives the full rule.
 
+### merge-sources and merge-repositories
+
+`merge-sources` folds one source record into another: a file combined from
+two exports of one site often holds the same source many times. Every
+citation of the dropped source is repointed to the kept one, with its own
+lines (`PAGE`, `DATA`, vendor tags) untouched, and the dropped source is
+removed. `merge-repositories` does the same for two repositories, repointing
+the sources' `REPO` lines:
+
+```sh
+gedcom merge-sources family.ged @S1@ @S7@ -o merged.ged
+gedcom merge-repositories merged.ged @R1@ @R2@ -o merged2.ged
+gedcom merge-sources --format json family.ged S1 S7 -o merged.ged | jq '.dropped'
+```
+
+```text
+conflict	_APID	1 _APID 1,5678::0
+dropped	TITL	1 TITL Example parish register, 1800-1850	1 TITL Example parish register
+deduplicated	REPO	1 REPO @R1@
+repointed	@F1@	FAM.SOUR
+```
+
+The report is the merge-people one, with one more kind of line. A line a
+source or repository may hold only once (`TITL`, `AUTH`, `PUBL`, `NAME`,
+`ADDR` and so on) is carried when the kept record has none; when the kept
+record holds a different one, it stays, and the dropped record's is reported
+as `dropped`, beside the kept one, and is not in the output. Other lines
+(`NOTE`, `REFN`, vendor tags such as `_APID`) are carried, and reported as a
+`conflict` when the kept record already held that tag with other lines.
+`--help` lists what each command carries. Run `validate` on the result.
+
 ### combine
 
 Joins files into one, in the order given, and writes it to a new file. No
@@ -525,7 +558,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `delete`, `media add`, `merge-people`, `merge-families` and
+  too: `put`, `delete`, `media add`, the merge commands and
   `convert` edit or rewrite the whole tree and write it unredacted. Source,
   media, repository and submitter records are not redacted, even when a
   hidden record cites them:
