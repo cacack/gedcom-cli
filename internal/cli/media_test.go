@@ -172,6 +172,19 @@ func TestMediaCheckEmptyFile(t *testing.T) {
 	}
 }
 
+// TestMediaCheckWhitespaceFile checks that a FILE of only whitespace is empty
+// too, not a path to resolve.
+func TestMediaCheckWhitespaceFile(t *testing.T) {
+	file, root := mediaFixture(t, strings.Replace(mediaEmptyGED, "1 FILE\n", "1 FILE \t\n", 1))
+	code, stdout, stderr := run(t, "media", "check", "--root", root, file)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "empty\t@O1@\tline 7\t") {
+		t.Errorf("stdout = %q, want an empty reference", stdout)
+	}
+}
+
 func TestMediaCheckEmptyAndMissing(t *testing.T) {
 	ged := strings.Replace(mediaEmptyGED, "0 TRLR\n", "0 @O2@ OBJE\n1 FILE photos/gone.jpg\n2 FORM jpg\n0 TRLR\n", 1)
 	file, root := mediaFixture(t, ged)
