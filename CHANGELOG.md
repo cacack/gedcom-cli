@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/cacack/gedcom-cli/compare/v0.5.0...v0.6.0) (2026-11-24)
+
+
+### Features
+
+* group duplicate pairs and report relatives for many people ([9577b98](https://github.com/cacack/gedcom-cli/commit/9577b98826428de71092b0ae45fe6a57d4809aea))
+* **list:** add subm, note and snote types; give get --format json a Type ([6c81de8](https://github.com/cacack/gedcom-cli/commit/6c81de8d1abeb3fcaf87aae07ed34c7a02575379))
+* **merge:** fold same-date events with --fold-events ([83c1fc3](https://github.com/cacack/gedcom-cli/commit/83c1fc3855531d80cbd7047323a899efe008240b))
+
+
+### Bug Fixes
+
+* **convert:** hide renamed xrefs of the living under --fail-on-loss ([eb80860](https://github.com/cacack/gedcom-cli/commit/eb808600589e1dfa20d803ff473148d5ee91330a))
+* **convert:** honor --redact-living in the report ([f525018](https://github.com/cacack/gedcom-cli/commit/f525018767549ddce7addf623e310ed0060e922c))
+* **get:** reject a typed entity that is not a JSON object ([a7f9875](https://github.com/cacack/gedcom-cli/commit/a7f98751b5e13efaadb115cd550407f66234f0d8))
+
 ## [0.5.0](https://github.com/cacack/gedcom-cli/compare/v0.4.0...v0.5.0) (2026-11-24)
 
 
