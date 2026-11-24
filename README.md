@@ -366,9 +366,10 @@ candidate	@I3@	@F1@	@F4@
 ```
 
 Each line says what happened to one substructure or pointer: `moved` to the
-kept record; `conflict`, moved, but the kept record already held that tag with
-a different value (for a family, a second `HUSB` or `WIFE`), so check which is
-right; `deduplicated`, already there; `repointed`, a pointer now naming the
+kept record; `conflict`, moved, but the kept record already held that tag
+with other lines (for a family, a second `HUSB` or `WIFE`): one fact stated two
+ways, such as two births, or two facts, such as two occupations, so check
+which; `deduplicated`, already there; `repointed`, a pointer now naming the
 kept record; `collapsed`, a pointer removed because it would repeat its
 neighbor. `candidate` lists families the kept person is now a spouse in with
 the same partner: candidates for `merge-families`, which `merge-people` does

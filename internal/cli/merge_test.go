@@ -141,6 +141,26 @@ func TestMergePeopleConflicts(t *testing.T) {
 	assertValid(t, out)
 }
 
+// TestMergePeopleRepeatableConflict pins that a tag which may repeat is a
+// conflict too when the lines differ: conflict means keep already held the
+// tag, not that GEDCOM allows it once.
+func TestMergePeopleRepeatableConflict(t *testing.T) {
+	in := filepath.Join(t.TempDir(), "occu.ged")
+	data := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n" +
+		"0 @I1@ INDI\n1 NAME Hal /Example/\n1 OCCU Farmer\n" +
+		"0 @I2@ INDI\n1 NAME Hal /Example/\n1 OCCU Miller\n1 OCCU Farmer\n0 TRLR\n"
+	if err := os.WriteFile(in, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, stdout := runMerge(t, "merge-people", in, "I1", "I2")
+	want := "conflict\tOCCU\t1 OCCU Miller\n" +
+		"deduplicated\tNAME\t1 NAME Hal /Example/\n" +
+		"deduplicated\tOCCU\t1 OCCU Farmer\n"
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+}
+
 func TestMergeFamilies(t *testing.T) {
 	people, _ := runMerge(t, "merge-people", mergeFixture, "I1", "I2")
 	out, stdout := runMerge(t, "merge-families", people, "F1", "F2")

@@ -34,8 +34,11 @@ type mergedPart struct {
 	Tag   string   `json:"tag"`
 	Lines []string `json:"lines"`
 	// Conflict marks a moved substructure whose tag the kept record already
-	// held, with a value that is not a pointer (or a family's HUSB or WIFE):
-	// a fact the two records state differently.
+	// held, with a value that is not a pointer (or a family's HUSB or WIFE).
+	// The lines differ, or it would have been deduplicated, but the tag may
+	// repeat: it flags one fact stated two ways (two BIRT) and two facts
+	// (two OCCU) alike, for the user to tell apart. It is deliberately not
+	// narrowed to tags GEDCOM allows once, which would leave out BIRT.
 	Conflict bool `json:"conflict,omitempty"`
 }
 
@@ -82,8 +85,10 @@ exactly as they were read.
 The report lists, one per line and tab-separated:
 
   moved         tag, lines    a substructure of drop now under keep
-  conflict      tag, lines    moved, but keep already held that tag with a
-                              value that is not a pointer: check which is right
+  conflict      tag, lines    moved, but keep already held that tag, with
+                              other lines and a value that is not a pointer:
+                              one fact stated two ways (two births) or two
+                              facts (two occupations); check which
   deduplicated  tag, lines    not moved, keep already held the same lines
   repointed     xref, path    a pointer that named drop and now names keep
   collapsed     xref, path    a pointer to drop removed as a repeat
@@ -194,8 +199,9 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 }
 
 // newMergeReport is the library's report as the merge commands print it.
-// keep is the kept record as it was before the merge, in doc. With redact,
-// the substructures' lines are hidden.
+// keep is the kept record as it was before the merge, in doc: the merge
+// functions never modify doc, they merge a copy. With redact, the
+// substructures' lines are hidden.
 func newMergeReport(doc *gedcom.Document, kind mergeKind, keep *gedcom.Record, r *merge.RecordMergeReport, redact bool) *mergeReport {
 	held := map[string]bool{}
 	for _, tag := range keep.Tags {
