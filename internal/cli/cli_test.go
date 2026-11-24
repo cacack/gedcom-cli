@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 const sample = "testdata/minimal.ged"
@@ -83,14 +85,25 @@ func TestExitCodes(t *testing.T) {
 	}
 }
 
+// allCommands is every command under root, subcommands included. The tests of
+// what every command must do walk it, so a new command cannot be left out.
+func allCommands(root *cobra.Command) []*cobra.Command {
+	var all []*cobra.Command
+	for _, cmd := range root.Commands() {
+		all = append(all, cmd)
+		all = append(all, allCommands(cmd)...)
+	}
+	return all
+}
+
 // TestCommandsDocumented is the check for CONSTITUTION.md criterion C3.
 func TestCommandsDocumented(t *testing.T) {
-	for _, cmd := range newRootCmd().Commands() {
+	for _, cmd := range allCommands(newRootCmd()) {
 		if cmd.Short == "" {
-			t.Errorf("command %q has no summary", cmd.Name())
+			t.Errorf("command %q has no summary", cmd.CommandPath())
 		}
 		if cmd.Example == "" {
-			t.Errorf("command %q has no example in its help", cmd.Name())
+			t.Errorf("command %q has no example in its help", cmd.CommandPath())
 		}
 	}
 }

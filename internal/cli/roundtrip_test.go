@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -25,10 +26,9 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // writeCommands holds every command that writes a GEDCOM file, as the
 // arguments that run it on in, writing out, with no change requested. Each
 // one must come back byte-identical (CONSTITUTION.md C2); add a new write
-// command here. Every fixture is GEDCOM 5.5.1 in UTF-8. delete always changes
-// the file, so it is held instead to removing exactly the deleted record's lines
-// (TestDeleteRemovesOnlyTheRecord). merge-people and merge-families always
-// request a change, so TestMergeKeepsUninvolvedRecords holds them to C2 instead.
+// command here. Every fixture is GEDCOM 5.5.1 in UTF-8. A command that always
+// changes the file goes in changingWriteCommands instead;
+// TestWriteCommandsListed fails for one in neither.
 var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 	// Combining one file joins nothing to it.
 	"combine": func(_ *testing.T, in, out string) []string {
@@ -54,6 +54,43 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		}
 		return []string{"put", in, fragment, "-o", out}
 	},
+}
+
+// changingWriteCommands maps each write command that cannot run with no change
+// requested to the test that holds it to C2 instead: only the lines of the
+// records it changes may differ.
+var changingWriteCommands = map[string]string{
+	"delete":         "TestDeleteRemovesOnlyTheRecord",
+	"merge-people":   "TestMergeKeepsUninvolvedRecords",
+	"merge-families": "TestMergeKeepsUninvolvedRecords",
+}
+
+// TestWriteCommandsListed checks that the commands with an --output flag are
+// exactly those in writeCommands and changingWriteCommands.
+func TestWriteCommandsListed(t *testing.T) {
+	writes := map[string]bool{}
+	for _, cmd := range allCommands(newRootCmd()) {
+		if cmd.Flags().Lookup("output") == nil {
+			continue
+		}
+		name := strings.TrimPrefix(cmd.CommandPath(), "gedcom ")
+		writes[name] = true
+		_, roundTrips := writeCommands[name]
+		_, changes := changingWriteCommands[name]
+		if roundTrips == changes {
+			t.Errorf("command %q has an --output flag: list it in writeCommands, or in changingWriteCommands if it always changes the file", name)
+		}
+	}
+	for name := range writeCommands {
+		if !writes[name] {
+			t.Errorf("writeCommands lists %q, which is not a command with an --output flag", name)
+		}
+	}
+	for name := range changingWriteCommands {
+		if !writes[name] {
+			t.Errorf("changingWriteCommands lists %q, which is not a command with an --output flag", name)
+		}
+	}
 }
 
 // getAll is the get output for every record of the file at path.

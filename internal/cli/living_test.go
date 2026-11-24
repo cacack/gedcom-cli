@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -85,11 +87,25 @@ func TestListLiving(t *testing.T) {
 // hidden, which --redact-living must still print.
 const annDeathHunk = "changed\t@I1@\tINDI\n  in INDI > DEAT\n  - line 17: 2 DATE 9 OCT 1979\n  + line 17: 2 DATE 9 OCT 1978\n"
 
+// redactLivingLeaks is the known gaps in --redact-living: for a TestRedactLiving
+// row, the livingDetails its command still shows. The row fails once it shows
+// none of them, so a gap cannot outlive its fix. Do not add a new command here.
+var redactLivingLeaks = map[string][]string{
+	// convert does not redact its report: the validation finding about Esme
+	// quotes her birth date.
+	"convert": {"31 FEB", "1980"},
+}
+
 // TestRedactLiving runs every command with --redact-living. Add each new
-// command here.
+// command here: the test fails for a command with no row.
 func TestRedactLiving(t *testing.T) {
 	all := []string{"@I1@", "@I2@", "@I3@", "@I4@", "@I5@", "@F1@", "@F2@", "@N1@"}
 	out := filepath.Join(t.TempDir(), "out.ged")
+	// A changed record for Esme (@I5@), for put to replace hers with.
+	esme := filepath.Join(t.TempDir(), "esme.ged")
+	if err := os.WriteFile(esme, []byte("0 @I5@ INDI\n1 NAME Esme /Changed/\n1 SEX F\n1 FAMC @F2@\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name string
 		args []string
@@ -120,7 +136,20 @@ func TestRedactLiving(t *testing.T) {
 		{"validate json", []string{"validate", "--format", "json", "--min-severity", "info", living}, ExitError, []string{`"code": "INVALID_DATE"`, `"message": "Living"`}},
 		// TestCombineRedactLiving checks the file written.
 		{"combine", []string{"combine", "--strategy", "zip", living, living, "-o", filepath.Join(t.TempDir(), "out.ged")}, ExitOK, []string{"5 individuals"}},
+		{"ancestors", []string{"ancestors", living, "@I5@"}, ExitOK, []string{"1\t@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
+		{"descendants", []string{"descendants", living, "@I1@"}, ExitOK, []string{"1\t@I3@\tLiving", "2\t@I5@\tLiving"}},
+		{"relatives", []string{"relatives", living, "@I3@"}, ExitOK, []string{"self\t\t@I3@\tLiving", "child\t@F2@\t@I5@\tLiving", "Bob /Example/"}},
+		{"duplicates", []string{"duplicates", living, living}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
+		// put, delete and media add report xrefs only.
+		{"put", []string{"put", living, esme, "-o", out}, ExitOK, []string{"replaced\t@I5@"}},
+		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
+		// The fixture has no media, so there is nothing to report.
+		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
+		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
+		// See redactLivingLeaks.
+		{"convert", []string{"convert", living, "--to", "7.0", "-o", out}, ExitOK, []string{"5.5.1 -> 7.0"}},
 	}
+	covered := map[string]bool{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := append([]string{"--redact-living", "--reference-year", referenceYear}, tt.args...)
@@ -128,10 +157,18 @@ func TestRedactLiving(t *testing.T) {
 			if code != tt.code {
 				t.Fatalf("exit = %d, want %d, stderr = %q", code, tt.code, stderr)
 			}
+			leaks, leaked := redactLivingLeaks[tt.name], false
 			for _, detail := range livingDetails {
+				if slices.Contains(leaks, detail) {
+					leaked = leaked || strings.Contains(stdout, detail)
+					continue
+				}
 				if strings.Contains(stdout, detail) || strings.Contains(stderr, detail) {
 					t.Errorf("output shows %q:\n%s%s", detail, stdout, stderr)
 				}
+			}
+			if leaks != nil && !leaked {
+				t.Errorf("output no longer shows any of %q: drop %q from redactLivingLeaks", leaks, tt.name)
 			}
 			for _, want := range tt.keep {
 				if !strings.Contains(stdout, want) {
@@ -139,6 +176,16 @@ func TestRedactLiving(t *testing.T) {
 				}
 			}
 		})
+		cmd, _, err := newRootCmd().Find(tt.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		covered[cmd.CommandPath()] = true
+	}
+	for _, cmd := range allCommands(newRootCmd()) {
+		if !cmd.HasSubCommands() && !covered[cmd.CommandPath()] {
+			t.Errorf("command %q has no row in TestRedactLiving", cmd.CommandPath())
+		}
 	}
 }
 
