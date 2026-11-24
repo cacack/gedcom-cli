@@ -73,11 +73,13 @@ separated by spaces or newlines, as for 'gedcom extract'. With more than one
 xref, or with "-", each person is reported once, in the order first given:
 text output prints each person's lines in turn, each starting with its self
 line, and --format json prints an array of the objects above, even when stdin
-held a single xref.`,
+held a single xref. A script whose list may hold one xref should send it on
+stdin to get an array every time.`,
 		Example: `  gedcom relatives family.ged @I1@
   gedcom relatives family.ged I1 | awk -F'\t' '$1 == "child"'
   gedcom relatives --format json family.ged I1 | jq '.relatives[] | select(.relationship == "parent")'
   gedcom relatives --format json family.ged I1 I2 I3
+  printf '%s\n' $XREFS | gedcom relatives --format json family.ged -
   gedcom duplicates --format json old-export.ged family.ged | jq -r '.[].b.xref' | gedcom relatives --format json family.ged -`,
 		Args: minArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -187,10 +187,12 @@ Several people can be given in one call, which reads the file once, and `-`
 reads more xrefs from stdin, as for [`extract`](#extract). Each person's lines
 follow in turn, each starting with its `self` line; `--format json` prints an
 array of the single-person objects. One xref given alone prints one object,
-as above:
+as above, so a script whose list may hold one xref should send it on stdin
+to get an array every time:
 
 ```sh
 gedcom relatives --format json family.ged I1 I2 I3
+printf '%s\n' $XREFS | gedcom relatives --format json family.ged -
 gedcom duplicates --format json old-export.ged family.ged | jq -r '.[].b.xref' | gedcom relatives --format json family.ged -
 ```
 
@@ -235,6 +237,7 @@ gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, 
 
 ```text
 0.90	@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978	false	@I7@	Ada /Example/	1901		false
+0.80	@I4@	Ada /Example/	1901		false	@I7@	Ada /Example/	1901		false
 0.70	@I2@	Ben /Example/	21 JUL 1899		false	@I1@	Ben /Example/			true
 ```
 
