@@ -39,8 +39,8 @@ func (r kinRow) fields() []string {
 
 func newRelativesCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "relatives <file> <xref>",
-		Short: "Print a person with their parents, siblings, spouses and children",
+		Use:   "relatives <file> <xref>...",
+		Short: "Print people with their parents, siblings, spouses and children",
 		Long: `Print a person and their immediate family, one person per line: first the
 person, then their parents, siblings, spouses and children, in file order
 (a family's husband before its wife).
@@ -67,13 +67,30 @@ indi (xref, name, birth, death), and "relatives", an array of objects with
 those keys plus relationship, family and pedigree. The person is not repeated
 in "relatives".
 
-An xref may be given without its @ delimiters.`,
+Several people may be given in one call, which reads the file once. An xref
+may be given without its @ delimiters. "-" reads more xrefs from stdin,
+separated by spaces or newlines, as for 'gedcom extract'. With more than one
+xref, or with "-", each person is reported once, in the order first given:
+text output prints each person's lines in turn, each starting with its self
+line, and --format json prints an array of the objects above, even when stdin
+held a single xref. A script whose list may hold one xref should send it on
+stdin to get an array every time.`,
 		Example: `  gedcom relatives family.ged @I1@
   gedcom relatives family.ged I1 | awk -F'\t' '$1 == "child"'
-  gedcom relatives --format json family.ged I1 | jq '.relatives[] | select(.relationship == "parent")'`,
-		Args: exactArgs(2),
+  gedcom relatives --format json family.ged I1 | jq '.relatives[] | select(.relationship == "parent")'
+  gedcom relatives --format json family.ged I1 I2 I3
+  printf '%s\n' $XREFS | gedcom relatives --format json family.ged -
+  gedcom duplicates --format json old-export.ged family.ged | jq -r '.[].b.xref' | gedcom relatives --format json family.ged -`,
+		Args: minArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := outputFormat(cmd)
+			if err != nil {
+				return err
+			}
+			// One xref typed as it is keeps the single-object output; any
+			// other call may name several people, so prints an array.
+			single := len(args) == 2 && args[1] != stdio
+			xrefs, err := readXRefs(cmd.InOrStdin(), args[1:])
 			if err != nil {
 				return err
 			}
@@ -81,22 +98,38 @@ An xref may be given without its @ delimiters.`,
 			if err != nil {
 				return err
 			}
-			records, err := findRecords(doc, args[1:])
+			records, err := findRecords(doc, xrefs)
 			if err != nil {
 				return err
 			}
-			person, ok := records[0].GetIndividual()
-			if !ok {
-				return fmt.Errorf("%s is a %s record, not an individual", records[0].XRef, records[0].Type)
-			}
-			report := relativesReport{
-				Person:    indiRowOf(person, living[person]),
-				Relatives: relatives(doc, living, person),
+			reports := make([]relativesReport, 0, len(records))
+			seen := make(map[*gedcom.Individual]bool, len(records))
+			for _, record := range records {
+				person, ok := record.GetIndividual()
+				if !ok {
+					return fmt.Errorf("%s is a %s record, not an individual", record.XRef, record.Type)
+				}
+				if seen[person] {
+					continue
+				}
+				seen[person] = true
+				reports = append(reports, relativesReport{
+					Person:    indiRowOf(person, living[person]),
+					Relatives: relatives(doc, living, person),
+				})
 			}
 			if format == formatJSON {
-				return writeJSON(cmd.OutOrStdout(), report)
+				if single {
+					return writeJSON(cmd.OutOrStdout(), reports[0])
+				}
+				return writeJSON(cmd.OutOrStdout(), reports)
 			}
-			return writeRelativesText(cmd.OutOrStdout(), report)
+			for _, report := range reports {
+				if err := writeRelativesText(cmd.OutOrStdout(), report); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 }

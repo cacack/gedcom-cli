@@ -118,7 +118,7 @@ once the whole file is written.`,
 			if err != nil {
 				return err
 			}
-			xrefs, err := extractXRefs(cmd.InOrStdin(), args[1:])
+			xrefs, err := readXRefs(cmd.InOrStdin(), args[1:])
 			if err != nil {
 				return err
 			}
@@ -177,8 +177,8 @@ once the whole file is written.`,
 	return cmd
 }
 
-// extractXRefs is the xrefs given, with "-" replaced by the xrefs on stdin.
-func extractXRefs(stdin io.Reader, args []string) ([]string, error) {
+// readXRefs is the xrefs given, with "-" replaced by the xrefs on stdin.
+func readXRefs(stdin io.Reader, args []string) ([]string, error) {
 	if i := slices.Index(args, stdio); i >= 0 && slices.Contains(args[i+1:], stdio) {
 		return nil, usageError{errors.New(`"-" may be given only once`)}
 	}

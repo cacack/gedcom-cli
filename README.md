@@ -48,7 +48,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`list`](#list) | List the records of one type, or the places, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
-| [`relatives`](#relatives) | Print a person with their parents, siblings, spouses and children |
+| [`relatives`](#relatives) | Print people with their parents, siblings, spouses and children |
 | [`validate`](#validate) | Report what the decoder could not read cleanly and what validation finds |
 | [`duplicates`](#duplicates) | Report people in one file who may be the same as people in another |
 | [`diff`](#diff) | Compare two versions of a file record by record |
@@ -183,6 +183,19 @@ spouse	@F3@	@I9@	Ivan /Sample/
 child	@F3@	@I10@	Jill /Sample/	1945		birth
 ```
 
+Several people can be given in one call, which reads the file once, and `-`
+reads more xrefs from stdin, as for [`extract`](#extract). Each person's lines
+follow in turn, each starting with its `self` line; `--format json` prints an
+array of the single-person objects. One xref given alone prints one object,
+as above, so a script whose list may hold one xref should send it on stdin
+to get an array every time:
+
+```sh
+gedcom relatives --format json family.ged I1 I2 I3
+printf '%s\n' $XREFS | gedcom relatives --format json family.ged -
+gedcom duplicates --format json old-export.ged family.ged | jq -r '.[].b.xref' | gedcom relatives --format json family.ged -
+```
+
 ### validate
 
 Reports what the decoder could not read cleanly (`decode`) and what
@@ -224,10 +237,31 @@ gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, 
 
 ```text
 0.90	@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978	false	@I7@	Ada /Example/	1901		false
+0.80	@I4@	Ada /Example/	1901		false	@I7@	Ada /Example/	1901		false
 0.70	@I2@	Ben /Example/	21 JUL 1899		false	@I1@	Ben /Example/			true
 ```
 
 Xrefs are each file's own, so `@I1@` can be a different person on each side.
+
+`--groups` reports groups instead of pairs: the connected components of the
+pairs at the chosen `--min-score`, so a person held twice in each file is one
+group rather than four pairs. Each group lists its members' xrefs in each
+file and the pairs, with scores, that join them; in JSON a group is an object
+with `a`, `b` and `pairs`:
+
+```sh
+gedcom duplicates --groups old-export.ged family.ged
+gedcom duplicates --groups --format json old-export.ged family.ged | jq -r '.[0].b[]' | gedcom relatives family.ged -
+```
+
+```text
+group 1: a @I1@ @I4@; b @I7@
+  0.90	@I1@	Ada /Example/	3 MAR 1901	14 NOV 1978	false	@I7@	Ada /Example/	1901		false
+  0.80	@I4@	Ada /Example/	1901		false	@I7@	Ada /Example/	1901		false
+group 2: a @I2@; b @I1@
+  0.70	@I2@	Ben /Example/	21 JUL 1899		false	@I1@	Ben /Example/			true
+```
+
 Once a pair is confirmed, [`merge-people`](#merge-people-and-merge-families)
 folds one into the other.
 

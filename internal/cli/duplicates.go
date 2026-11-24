@@ -3,9 +3,12 @@ package cli
 import (
 	"cmp"
 	"fmt"
+	"io"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/cacack/gedcom-go/v3/gedcom"
 	"github.com/cacack/gedcom-go/v3/validator"
@@ -24,6 +27,14 @@ type duplicatePair struct {
 
 func (p duplicatePair) fields() []string {
 	return append(append([]string{strconv.FormatFloat(p.Score, 'f', 2, 64)}, p.A.fields()...), p.B.fields()...)
+}
+
+// duplicateGroup is a connected component of the pairs: everyone in A and B
+// that the pairs join, directly or through another member, with those pairs.
+type duplicateGroup struct {
+	A     []string        `json:"a"`
+	B     []string        `json:"b"`
+	Pairs []duplicatePair `json:"pairs"`
 }
 
 func newDuplicatesCmd() *cobra.Command {
@@ -46,10 +57,22 @@ Pairs are sorted by score, highest first, then by file order in A and in B.
 The score runs from 0 to 1 and is rounded to two decimals; --min-score drops
 pairs whose rounded score is below it. The library bounds its work on large surname groups and long
 given names; when it skipped or shortened any comparison, a warning on stderr
-says so, and some pairs may be missing.`,
+says so, and some pairs may be missing.
+
+--groups reports groups instead of pairs: the connected components of the
+pairs reported, so a person held twice in A and twice in B is one group of
+four joined by up to four pairs, not four separate pairs. Each group lists
+its members' xrefs in A and in B, in file order, and the pairs that join
+them, in pair order. Groups are in the order of their first pair. In text, a
+group is a line "group N: a <xrefs>; b <xrefs>" followed by its pairs, each
+indented by two spaces and printed as without --groups. In JSON, each group is
+an object with "a" and "b", arrays of xrefs, and "pairs", an array of pair
+objects as without --groups.`,
 		Example: `  gedcom duplicates old-export.ged family.ged
   gedcom duplicates --min-score 0.9 old-export.ged family.ged
-  gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, .b.xref]'`,
+  gedcom duplicates --format json old-export.ged family.ged | jq '.[] | [.a.xref, .b.xref]'
+  gedcom duplicates --groups old-export.ged family.ged
+  gedcom duplicates --groups --format json old-export.ged family.ged | jq -r '.[0].b[]' | gedcom relatives family.ged -`,
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := outputFormat(cmd)
@@ -62,6 +85,10 @@ says so, and some pairs may be missing.`,
 			}
 			if !(minScore >= 0 && minScore <= 1) {
 				return usageError{fmt.Errorf("invalid --min-score %v: want a number from 0 to 1", minScore)}
+			}
+			groups, err := cmd.Flags().GetBool("groups")
+			if err != nil {
+				return err
 			}
 			opts, err := readLivingOptions(cmd)
 			if err != nil {
@@ -91,6 +118,12 @@ says so, and some pairs may be missing.`,
 				}
 			}
 			pairs := duplicatePairs(a, b, livingA, livingB, report.Pairs, minScore)
+			if groups {
+				if format == formatJSON {
+					return writeJSON(cmd.OutOrStdout(), duplicateGroups(pairs))
+				}
+				return writeGroupsText(cmd.OutOrStdout(), duplicateGroups(pairs))
+			}
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), pairs)
 			}
@@ -101,6 +134,7 @@ says so, and some pairs may be missing.`,
 			return writeRowsText(cmd.OutOrStdout(), rows)
 		},
 	}
+	cmd.Flags().Bool("groups", false, "report groups of people joined by the pairs, instead of the pairs")
 	cmd.Flags().Float64("min-score", validator.DefaultDuplicateConfig().MinConfidence, "report only pairs scoring at least this, from 0 to 1")
 	return cmd
 }
@@ -165,4 +199,78 @@ func fileOrder(doc *gedcom.Document) map[*gedcom.Individual]int {
 		order[ind] = i
 	}
 	return order
+}
+
+// duplicateGroups gathers pairs, in their sorted order, into the connected
+// components they form. A group's members are in file order and its pairs in
+// the order given; groups are in the order of their first pair. The result is
+// never nil, so that no groups is [] in JSON.
+func duplicateGroups(pairs []duplicatePair) []duplicateGroup {
+	// Union-find over the members, keyed by side and position in the file.
+	type member struct {
+		b     bool
+		order int
+	}
+	parent := map[member]member{}
+	var find func(m member) member
+	find = func(m member) member {
+		p, ok := parent[m]
+		if !ok || p == m {
+			return m
+		}
+		root := find(p)
+		parent[m] = root
+		return root
+	}
+	for _, p := range pairs {
+		ra, rb := find(member{false, p.orderA}), find(member{true, p.orderB})
+		parent[ra], parent[rb] = ra, ra
+	}
+	groups := []duplicateGroup{}
+	index := map[member]int{} // root to its group in groups
+	membersA, membersB := map[int]map[int]string{}, map[int]map[int]string{}
+	for _, p := range pairs {
+		root := find(member{false, p.orderA})
+		i, ok := index[root]
+		if !ok {
+			i = len(groups)
+			index[root] = i
+			groups = append(groups, duplicateGroup{})
+			membersA[i], membersB[i] = map[int]string{}, map[int]string{}
+		}
+		groups[i].Pairs = append(groups[i].Pairs, p)
+		membersA[i][p.orderA] = p.A.XRef
+		membersB[i][p.orderB] = p.B.XRef
+	}
+	inFileOrder := func(members map[int]string) []string {
+		orders := slices.Sorted(maps.Keys(members))
+		xrefs := make([]string, len(orders))
+		for k, order := range orders {
+			xrefs[k] = members[order]
+		}
+		return xrefs
+	}
+	for i := range groups {
+		groups[i].A, groups[i].B = inFileOrder(membersA[i]), inFileOrder(membersB[i])
+	}
+	return groups
+}
+
+// writeGroupsText writes each group's header line and then its pairs,
+// indented.
+func writeGroupsText(w io.Writer, groups []duplicateGroup) error {
+	for n, g := range groups {
+		if _, err := fmt.Fprintf(w, "group %d: a %s; b %s\n", n+1, oneLine(strings.Join(g.A, " ")), oneLine(strings.Join(g.B, " "))); err != nil {
+			return err
+		}
+		for _, p := range g.Pairs {
+			if _, err := io.WriteString(w, "  "); err != nil {
+				return err
+			}
+			if err := writeRowsText(w, []row{p}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

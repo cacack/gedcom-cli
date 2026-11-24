@@ -31,6 +31,113 @@ func TestDuplicatesText(t *testing.T) {
 	}
 }
 
+// The groups fixtures hold Ansel once on each side and Cora twice on each
+// side, so the five pairs form two groups.
+const (
+	duplicateGroupsA = "testdata/duplicates-groups-a.ged"
+	duplicateGroupsB = "testdata/duplicates-groups-b.ged"
+)
+
+func TestDuplicatesGroupsText(t *testing.T) {
+	code, stdout, stderr := run(t, "duplicates", "--groups", duplicateGroupsA, duplicateGroupsB)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	ansel := "Ansel /Example/\t1880\t\tfalse"
+	cora := "Cora /Sample/\t1901\t\tfalse"
+	want := "group 1: a @I1@; b @I2@\n" +
+		"  0.90\t@I1@\t" + ansel + "\t@I2@\t" + ansel + "\n" +
+		"group 2: a @I2@ @I3@; b @I1@ @I3@\n" +
+		"  0.90\t@I2@\t" + cora + "\t@I1@\t" + cora + "\n" +
+		"  0.90\t@I2@\t" + cora + "\t@I3@\t" + cora + "\n" +
+		"  0.90\t@I3@\t" + cora + "\t@I1@\t" + cora + "\n" +
+		"  0.90\t@I3@\t" + cora + "\t@I3@\t" + cora + "\n"
+	if stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
+	// Without --groups the same pairs print as pairs.
+	_, pairs, _ := run(t, "duplicates", duplicateGroupsA, duplicateGroupsB)
+	var lines []string
+	for _, line := range strings.Split(want, "\n") {
+		if strings.HasPrefix(line, "  ") {
+			lines = append(lines, strings.TrimPrefix(line, "  "))
+		}
+	}
+	if pairs != strings.Join(lines, "\n")+"\n" {
+		t.Errorf("pairs output =\n%s\nwant the grouped pairs unindented", pairs)
+	}
+}
+
+func TestDuplicatesGroupsJSON(t *testing.T) {
+	code, stdout, stderr := run(t, "duplicates", "--groups", "--format", "json", duplicateGroupsA, duplicateGroupsB)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []struct {
+		A     []string        `json:"a"`
+		B     []string        `json:"b"`
+		Pairs []duplicatePair `json:"pairs"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	type summary struct {
+		A, B, Pairs []string
+	}
+	var sums []summary
+	for _, g := range got {
+		s := summary{A: g.A, B: g.B}
+		for _, p := range g.Pairs {
+			s.Pairs = append(s.Pairs, strconv.FormatFloat(p.Score, 'g', -1, 64)+" "+p.A.XRef+" "+p.B.XRef)
+		}
+		sums = append(sums, s)
+	}
+	want := []summary{
+		{A: []string{"@I1@"}, B: []string{"@I2@"}, Pairs: []string{"0.9 @I1@ @I2@"}},
+		{A: []string{"@I2@", "@I3@"}, B: []string{"@I1@", "@I3@"}, Pairs: []string{"0.9 @I2@ @I1@", "0.9 @I2@ @I3@", "0.9 @I3@ @I1@", "0.9 @I3@ @I3@"}},
+	}
+	if !reflect.DeepEqual(sums, want) {
+		t.Errorf("groups = %+v\nwant %+v", sums, want)
+	}
+	if !strings.Contains(stdout, `"name": "Cora /Sample/"`) {
+		t.Errorf("pairs in a group lack list indi's keys:\n%s", stdout)
+	}
+}
+
+// TestDuplicatesGroupsMinScore checks that groups are formed from the pairs
+// reported at the chosen score, and that no pairs is no groups.
+func TestDuplicatesGroupsMinScore(t *testing.T) {
+	tests := []struct {
+		minScore string
+		want     string
+	}{
+		{"0", "group 1: a @I1@; b @I2@\ngroup 2: a @I2@; b @I1@\ngroup 3: a @I3@; b @I3@\n"},
+		{"0.8", "group 1: a @I1@; b @I2@\ngroup 2: a @I2@; b @I1@\n"},
+		{"1", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.minScore, func(t *testing.T) {
+			code, stdout, stderr := run(t, "duplicates", "--groups", "--min-score", tt.minScore, "--reference-year", referenceYear, duplicatesA, duplicatesB)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			var headers []string
+			for _, line := range strings.SplitAfter(stdout, "\n") {
+				if strings.HasPrefix(line, "group ") {
+					headers = append(headers, line)
+				}
+			}
+			if got := strings.Join(headers, ""); got != tt.want {
+				t.Errorf("group lines = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	code, stdout, stderr := run(t, "duplicates", "--groups", "--format", "json", "--min-score", "1", duplicatesA, duplicatesB)
+	if code != ExitOK || stderr != "" || strings.TrimSpace(stdout) != "[]" {
+		t.Errorf("json: exit = %d, stderr = %q, stdout = %q", code, stderr, stdout)
+	}
+}
+
 func TestDuplicatesJSON(t *testing.T) {
 	code, stdout, stderr := run(t, "duplicates", "--format", "json", "--reference-year", referenceYear, duplicatesA, duplicatesB)
 	if code != ExitOK || stderr != "" {
