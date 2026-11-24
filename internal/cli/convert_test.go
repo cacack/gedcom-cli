@@ -324,3 +324,19 @@ func TestConvertFailOnLossKeepsExistingOutput(t *testing.T) {
 		t.Errorf("existing output changed: %q", got)
 	}
 }
+
+// -o - puts the GEDCOM on stdout and the report on stderr.
+func TestConvertToStdout(t *testing.T) {
+	want, err := os.ReadFile(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := run(t, "convert", records, "--to", "5.5.1", "-o", "-")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	assertSameBytes(t, []byte(stdout), want)
+	if !strings.HasSuffix(strings.SplitN(stderr, "\n", 2)[0], "wrote stdout") {
+		t.Errorf("stderr = %q, want the report naming stdout", stderr)
+	}
+}
