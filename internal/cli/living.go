@@ -69,7 +69,9 @@ func openDocument(cmd *cobra.Command, path string) (*gedcom.Document, map[*gedco
 	}
 	living := presumedLiving(doc, opts.cfg)
 	if opts.redact {
-		redactDocument(hiddenRecords(doc, living))
+		if err := redactDocument(hiddenRecords(doc, living)); err != nil {
+			return nil, nil, err
+		}
 	}
 	return doc, living, nil
 }
@@ -116,7 +118,8 @@ func isNoteRecord(r *gedcom.Record) bool {
 // of it: an individual keeps its xref, sex and family links and is named
 // Living; a family keeps its spouses and children; a note reads Living. The
 // record's tags are dropped, so the library writes it from the redacted entity.
-func redactDocument(hidden map[*gedcom.Record]bool) {
+// A hidden record of any other type is an error, never passed through as it is.
+func redactDocument(hidden map[*gedcom.Record]bool) error {
 	for record := range hidden {
 		switch e := record.Entity.(type) {
 		case *gedcom.Individual:
@@ -134,10 +137,11 @@ func redactDocument(hidden map[*gedcom.Record]bool) {
 		case *gedcom.SharedNote:
 			*e = gedcom.SharedNote{XRef: e.XRef, Text: redactedValue}
 		default:
-			continue
+			return fmt.Errorf("--redact-living cannot redact %s, a %s record", record.XRef, record.Type)
 		}
 		record.Tags, record.Value = nil, ""
 	}
+	return nil
 }
 
 // familyLinks keeps only the family each link points to.

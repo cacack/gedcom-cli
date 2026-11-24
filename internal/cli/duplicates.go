@@ -83,8 +83,12 @@ says so, and some pairs may be missing.`,
 			}
 			livingA, livingB := presumedLiving(a, opts.cfg), presumedLiving(b, opts.cfg)
 			if opts.redact {
-				redactDocument(hiddenRecords(a, livingA))
-				redactDocument(hiddenRecords(b, livingB))
+				if err := redactDocument(hiddenRecords(a, livingA)); err != nil {
+					return err
+				}
+				if err := redactDocument(hiddenRecords(b, livingB)); err != nil {
+					return err
+				}
 			}
 			pairs := duplicatePairs(a, b, livingA, livingB, report.Pairs, minScore)
 			if format == formatJSON {
