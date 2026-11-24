@@ -90,11 +90,7 @@ const annDeathHunk = "changed\t@I1@\tINDI\n  in INDI > DEAT\n  - line 17: 2 DATE
 // redactLivingLeaks is the known gaps in --redact-living: for a TestRedactLiving
 // row, the livingDetails its command still shows. The row fails once it shows
 // none of them, so a gap cannot outlive its fix. Do not add a new command here.
-var redactLivingLeaks = map[string][]string{
-	// convert does not redact its report: the validation finding about Esme
-	// quotes her birth date.
-	"convert": {"31 FEB", "1980"},
-}
+var redactLivingLeaks = map[string][]string{}
 
 // TestRedactLiving runs every command with --redact-living. Add each new
 // command here: the test fails for a command with no row.
@@ -148,8 +144,10 @@ func TestRedactLiving(t *testing.T) {
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
-		// See redactLivingLeaks.
-		{"convert", []string{"convert", living, "--to", "7.0", "-o", out}, ExitOK, []string{"5.5.1 -> 7.0"}},
+		// The decode finding is on Dirk's line, the note is Cleo's and the
+		// validation issue is about Esme's birth date.
+		{"convert", []string{"convert", living, "--to", "7.0", "-o", out}, ExitOK, []string{"5.5.1 -> 7.0", "INVALID_LEVEL\tline 40\tLiving", "Note @N1@\tLiving\tLiving\tLiving", "validation (1)\n  Living\n", "VERSION_UPGRADE"}},
+		{"convert json", []string{"convert", "--format", "json", living, "--to", "7.0", "-o", out}, ExitOK, []string{`"code": "INVALID_LEVEL"`, `"path": "Note @N1@"`, "\"validationIssues\": [\n    \"Living\"\n  ]"}},
 	}
 	covered := map[string]bool{}
 	for _, tt := range tests {
@@ -188,6 +186,59 @@ func TestRedactLiving(t *testing.T) {
 		if !cmd.HasSubCommands() && !covered[cmd.CommandPath()] {
 			t.Errorf("command %q has no row in TestRedactLiving", cmd.CommandPath())
 		}
+	}
+}
+
+// TestConvertRedactLivingRenamedXRef checks that convert hides what its report
+// says about a living person whose xref conversion to 7.0 renames.
+func TestConvertRedactLivingRenamedXRef(t *testing.T) {
+	in := writeTemp(t, "in.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n"+
+		"0 @esme@ INDI\n1 NAME Esme /Example/\n1 BIRT\n2 DATE 31 FEB 1980\n0 TRLR\n")
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "--redact-living", "--reference-year", referenceYear, "convert", in, "--to", "7.0", "-o", out)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "validation (1)\n  Living\n") {
+		t.Errorf("stdout lacks the redacted validation issue:\n%s", stdout)
+	}
+	for _, detail := range []string{"Esme", "1980", "31 FEB"} {
+		if strings.Contains(stdout, detail) {
+			t.Errorf("output shows %q:\n%s", detail, stdout)
+		}
+	}
+}
+
+// TestRedactLivingWholeFiles checks the README's rule for the files written
+// with --redact-living: extract and combine redact theirs (TestRedactLiving
+// and TestCombineRedactLiving), and every other write command writes the
+// whole tree unredacted.
+func TestRedactLivingWholeFiles(t *testing.T) {
+	esme := writeTemp(t, "esme.ged", "0 @I5@ INDI\n1 NAME Esme /Changed/\n1 SEX F\n1 FAMC @F2@\n")
+	for _, args := range [][]string{
+		{"put", living, esme},
+		{"delete", "--force", living, "@I5@"},
+		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
+		{"merge-people", living, "@I3@", "@I5@"},
+		{"merge-families", living, "@F1@", "@F2@"},
+		{"convert", living, "--to", "7.0"},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "out.ged")
+			args = append([]string{"--redact-living", "--reference-year", referenceYear}, append(args, "-o", out)...)
+			if code, _, stderr := run(t, args...); code != ExitOK {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			got, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"Cleo /Example/", "Hiddenvale", "Secret Lane"} {
+				if !strings.Contains(string(got), want) {
+					t.Errorf("file written lacks %q:\n%s", want, got)
+				}
+			}
+		})
 	}
 }
 

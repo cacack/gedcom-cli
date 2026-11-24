@@ -85,7 +85,12 @@ comes the library's conversion report, most serious first:
   validation       problems found in the converted document
 
 With --fail-on-loss, a conversion that would lose data writes no output file
-and exits 1, with the report still printed.`,
+and exits 1, with the report still printed.
+
+With --redact-living, what the report says about a presumed-living person
+reads Living: a decode finding on a line of their record, and a note,
+transformation detail or validation issue naming it. The file written is not
+redacted.`,
 		Example: `  gedcom convert legacy.ged --to 5.5.1 -o legacy-utf8.ged
   gedcom convert --fail-on-loss legacy.ged --to 7.0 -o legacy-v7.ged
   gedcom convert --format json legacy.ged --to 5.5.1 -o out.ged | jq .dataLoss`,
@@ -131,9 +136,20 @@ and exits 1, with the report still printed.`,
 // returns the report whenever the conversion ran, with an error when data
 // loss stopped it (failOnLoss) or the output could not be written.
 func convertFile(cmd *cobra.Command, in, out string, to gedcom.Version, failOnLoss bool) (*convertReport, error) {
+	living, err := readLivingOptions(cmd)
+	if err != nil {
+		return nil, err
+	}
 	res, err := decodeForWrite(in)
 	if err != nil {
 		return nil, err
+	}
+	decode := decodeFindings(res.Diagnostics)
+	var hidden []string // the xrefs of the records --redact-living hides
+	if living.redact {
+		srcHidden := hiddenRecords(res.Document, presumedLiving(res.Document, living.cfg))
+		redactFindings(decode, res.Document, srcHidden)
+		hidden = xrefsOf(srcHidden)
 	}
 	opts := converter.DefaultOptions()
 	opts.StrictDataLoss = failOnLoss
@@ -142,7 +158,15 @@ func convertFile(cmd *cobra.Command, in, out string, to gedcom.Version, failOnLo
 		return nil, fmt.Errorf("convert %s: %w", in, err)
 	}
 	report := newConvertReport(in, out, lib)
-	report.Decode = decodeFindings(res.Diagnostics)
+	report.Decode = decode
+	if living.redact {
+		// Conversion may rename a record (7.0 xrefs are uppercase), and the
+		// report may name it by either xref.
+		if converted != nil {
+			hidden = append(hidden, xrefsOf(hiddenRecords(converted, presumedLiving(converted, living.cfg)))...)
+		}
+		redactConvertReport(report, hidden)
+	}
 	if errors.Is(err, converter.ErrDataLoss) {
 		return report, fmt.Errorf("conversion of %s to %s would lose data (%s); %s not written",
 			in, to, plural(len(lib.DataLoss), "item", "items"), outputName(out))
@@ -179,6 +203,46 @@ func newConvertReport(in, out string, r *gedcom.ConversionReport) *convertReport
 		report.Transformations = append(report.Transformations, transformation{t.Type, t.Description, t.Count, append([]string{}, t.Details...)})
 	}
 	return report
+}
+
+// redactConvertReport hides what the report says about a record named by one
+// of xrefs: a note's original, result and reason, a transformation detail and
+// a validation issue read Living. The library reports these as text, so an
+// entry is matched by the xref it names.
+func redactConvertReport(r *convertReport, xrefs []string) {
+	names := func(s string) bool {
+		return slices.ContainsFunc(xrefs, func(x string) bool { return strings.Contains(s, x) })
+	}
+	for _, ns := range [][]conversionNote{r.Dropped, r.Approximated, r.Normalized, r.Preserved} {
+		for i, n := range ns {
+			if names(n.Path) || names(n.Original) || names(n.Result) {
+				ns[i].Original, ns[i].Result, ns[i].Reason = redactedValue, redactedValue, redactedValue
+			}
+		}
+	}
+	for _, t := range r.Transformations {
+		for i, d := range t.Details {
+			if names(d) {
+				t.Details[i] = redactedValue
+			}
+		}
+	}
+	for i, issue := range r.ValidationIssues {
+		if names(issue) {
+			r.ValidationIssues[i] = redactedValue
+		}
+	}
+}
+
+// xrefsOf is the xrefs of records, leaving out any without one.
+func xrefsOf(records map[*gedcom.Record]bool) []string {
+	var xrefs []string
+	for record := range records {
+		if record.XRef != "" {
+			xrefs = append(xrefs, record.XRef)
+		}
+	}
+	return xrefs
 }
 
 func notes(in []gedcom.ConversionNote) []conversionNote {
