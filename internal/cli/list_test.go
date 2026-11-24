@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -397,6 +398,128 @@ func TestListPlacEmpty(t *testing.T) {
 	}
 }
 
+// tagged is a file with vendor tags, an extension record, a continued note,
+// a header the counts leave out, and EVEN TYPE values that repeat, differ in
+// case or are absent.
+const tagged = "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+	"0 @I1@ INDI\n1 NAME Cora /Sample/\n1 SEX F\n" +
+	"1 EVEN\n2 TYPE Census\n1 EVEN\n2 TYPE census\n" +
+	"1 _MILT\n2 DATE 1918\n" +
+	"1 NOTE First line\n2 CONT second line\n" +
+	"0 @I2@ INDI\n1 NAME Dell /Sample/\n1 SEX M\n" +
+	"1 EVEN\n2 TYPE Census\n1 EVEN\n2 TYPE\n" +
+	"0 @L1@ _LOC\n1 NAME Example Hall\n" +
+	"0 TRLR\n"
+
+func writeTagged(t *testing.T) string {
+	t.Helper()
+	return writeTemp(t, "tagged.ged", tagged)
+}
+
+func TestListTags(t *testing.T) {
+	path := writeTagged(t)
+	// Count descending, then path in byte order.
+	const want = "4\tINDI.EVEN\n" +
+		"4\tINDI.EVEN.TYPE\n" +
+		"2\tINDI.NAME\n" +
+		"2\tINDI.SEX\n" +
+		"1\tINDI.NOTE\n" +
+		"1\tINDI.NOTE.CONT\n" +
+		"1\tINDI._MILT\n" +
+		"1\tINDI._MILT.DATE\n" +
+		"1\t_LOC.NAME\n"
+	code, stdout, stderr := run(t, "list", path, "tags")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+
+	// The counts are every line but the header's, the trailer and the
+	// level-0 lines.
+	lines := strings.Split(strings.TrimSuffix(tagged, "\n"), "\n")
+	inHeader, wantSum := false, 0
+	for _, line := range lines {
+		if strings.HasPrefix(line, "0 ") {
+			inHeader = line == "0 HEAD"
+			continue
+		}
+		if !inHeader {
+			wantSum++
+		}
+	}
+	sum := 0
+	for _, line := range strings.Split(strings.TrimSuffix(stdout, "\n"), "\n") {
+		n, err := strconv.Atoi(strings.Split(line, "\t")[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum += n
+	}
+	if sum != wantSum {
+		t.Errorf("counts sum to %d, want %d", sum, wantSum)
+	}
+}
+
+func TestListTagsVendor(t *testing.T) {
+	code, stdout, stderr := run(t, "list", "--vendor", writeTagged(t), "tags")
+	if want := "1\tINDI._MILT\n1\tINDI._MILT.DATE\n1\t_LOC.NAME\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout:\n%s\nwant:\n%s", code, stderr, stdout, want)
+	}
+}
+
+func TestListTagsLimitAndJSON(t *testing.T) {
+	code, stdout, stderr := run(t, "list", "--format", "json", "--limit", "3", writeTagged(t), "tags")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	// --limit applies after sorting: the three most used paths.
+	want := []map[string]any{
+		{"count": float64(4), "path": "INDI.EVEN"},
+		{"count": float64(4), "path": "INDI.EVEN.TYPE"},
+		{"count": float64(2), "path": "INDI.NAME"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestListValues(t *testing.T) {
+	path := writeTagged(t)
+	// Values differing in case are separate; the TYPE with no value is left out.
+	code, stdout, stderr := run(t, "list", "--tag", "INDI.EVEN.TYPE", path, "values")
+	if want := "2\tCensus\n1\tcensus\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout:\n%s\nwant:\n%s", code, stderr, stdout, want)
+	}
+	// A value is its line's own, without the CONT line continuing it.
+	code, stdout, stderr = run(t, "list", "--tag", "INDI.NOTE", path, "values")
+	if want := "1\tFirst line\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("note: exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+	// Another record type's NAME is not INDI.NAME.
+	code, stdout, stderr = run(t, "list", "--format", "json", "--limit", "1", "--tag", "INDI.NAME", path, "values")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if want := []map[string]any{{"count": float64(1), "value": "Cora /Sample/"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("json: got %v, want %v", got, want)
+	}
+	// A path that matches nothing is an empty list.
+	code, stdout, stderr = run(t, "list", "--format", "json", "--tag", "FAM.MARR", path, "values")
+	if code != ExitOK || stdout != "[]\n" || stderr != "" {
+		t.Errorf("none: exit = %d, stdout = %q, stderr = %q; want []", code, stdout, stderr)
+	}
+}
+
 func TestListUnknownType(t *testing.T) {
 	code, stdout, stderr := run(t, "list", records, "people")
 	if code != ExitUsage {
@@ -427,6 +550,12 @@ func TestListExitCodes(t *testing.T) {
 		{"unknown type before the file is read", []string{"list", "testdata/does-not-exist.ged", "people"}, ExitUsage},
 		{"missing file", []string{"list", "testdata/does-not-exist.ged", "indi"}, ExitError},
 		{"missing file for plac", []string{"list", "testdata/does-not-exist.ged", "plac"}, ExitError},
+		{"values without --tag", []string{"list", records, "values"}, ExitUsage},
+		{"--tag naming a record", []string{"list", "--tag", "INDI", records, "values"}, ExitUsage},
+		{"--tag with an empty tag", []string{"list", "--tag", "INDI..DATE", records, "values"}, ExitUsage},
+		{"--tag on another type", []string{"list", "--tag", "INDI.SEX", records, "tags"}, ExitUsage},
+		{"--vendor on another type", []string{"list", "--vendor", records, "plac"}, ExitUsage},
+		{"missing file for tags", []string{"list", "testdata/does-not-exist.ged", "tags"}, ExitError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -446,8 +575,8 @@ func TestListHelpHasExample(t *testing.T) {
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac  count, place",
-		"subm  xref, name", "snote xref, text", "but SUBN"} {
+	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac   count, place",
+		"subm   xref, name", "snote  xref, text", "tags   count, path", "values count, value", "but SUBN"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}
