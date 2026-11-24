@@ -50,7 +50,7 @@ func TestRelativesJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("stdout is not a JSON object: %v\n%s", err, stdout)
 	}
-	wantPerson := map[string]any{"xref": "@I1@", "name": "Ann /Example/", "birth": "4 APR 1920", "death": "1 JAN 1990"}
+	wantPerson := map[string]any{"xref": "@I1@", "name": "Ann /Example/", "birth": "4 APR 1920", "death": "1 JAN 1990", "living": false}
 	if !reflect.DeepEqual(got.Person, wantPerson) {
 		t.Errorf("person = %v\nwant %v", got.Person, wantPerson)
 	}
@@ -65,6 +65,10 @@ func TestRelativesJSON(t *testing.T) {
 		for k, field := range strings.Split(line, "\t") {
 			want[keys[k]] = field
 		}
+		if _, ok := got.Relatives[n]["living"].(bool); !ok {
+			t.Errorf("relatives[%d] has no boolean living: %v", n, got.Relatives[n])
+		}
+		delete(got.Relatives[n], "living")
 		if !reflect.DeepEqual(got.Relatives[n], want) {
 			t.Errorf("relatives[%d] = %v\nwant %v", n, got.Relatives[n], want)
 		}
@@ -158,5 +162,23 @@ func TestRelativesErrors(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestRelativesRedactLiving checks that --redact-living hides a presumed-living
+// relative's name while keeping the xref.
+func TestRelativesRedactLiving(t *testing.T) {
+	code, stdout, stderr := run(t, "relatives", "--redact-living", families, "@I1@")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if strings.Contains(stdout, "Clara") {
+		t.Errorf("a presumed-living relative's name is printed:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "@I3@") {
+		t.Errorf("the presumed-living relative's xref is missing:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Ann /Example/") {
+		t.Errorf("a deceased person's name is hidden:\n%s", stdout)
 	}
 }

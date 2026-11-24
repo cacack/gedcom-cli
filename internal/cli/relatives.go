@@ -77,7 +77,7 @@ An xref may be given without its @ delimiters.`,
 			if err != nil {
 				return err
 			}
-			doc, err := decodeFile(args[0])
+			doc, living, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -90,8 +90,8 @@ An xref may be given without its @ delimiters.`,
 				return fmt.Errorf("%s is a %s record, not an individual", records[0].XRef, records[0].Type)
 			}
 			report := relativesReport{
-				Person:    newIndiRow(person).(indiRow),
-				Relatives: relatives(doc, person),
+				Person:    indiRowOf(person, living[person]),
+				Relatives: relatives(doc, living, person),
 			}
 			if format == formatJSON {
 				return writeJSON(cmd.OutOrStdout(), report)
@@ -103,11 +103,11 @@ An xref may be given without its @ delimiters.`,
 
 // relatives lists person's parents, siblings, spouses and children, in that
 // order. The result is never nil, so that no relatives is [] in JSON.
-func relatives(doc *gedcom.Document, person *gedcom.Individual) []kinRow {
+func relatives(doc *gedcom.Document, living map[*gedcom.Individual]bool, person *gedcom.Individual) []kinRow {
 	rows := []kinRow{}
 	add := func(i *gedcom.Individual, relationship string, fam *gedcom.Family, pedigree string) {
 		rows = append(rows, kinRow{
-			indiRow:      newIndiRow(i).(indiRow),
+			indiRow:      indiRowOf(i, living[i]),
 			Relationship: relationship,
 			Family:       fam.XRef,
 			Pedigree:     pedigree,
