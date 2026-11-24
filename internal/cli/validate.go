@@ -62,7 +62,10 @@ With --format json, exit 1 with a report on stdout means the file has errors;
 exit 1 with nothing on stdout means the file could not be read.
 
 Findings are the library's, as reported. The decoder and the validator both
-report a duplicated xref, so DUPLICATE_XREF appears once per source. Duplicate
+report a duplicated xref, so DUPLICATE_XREF appears once per source. A family
+link only one record claims (a FAMS, FAMC, HUSB, WIFE or CHIL the other
+record does not point back to) is an UNRECIPROCATED_<tag> warning on the
+individual, with the family as related xref. Duplicate
 detection (POTENTIAL_DUPLICATE) is slow on large files and runs only with
 --min-severity info.
 
