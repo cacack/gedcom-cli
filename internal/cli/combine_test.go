@@ -303,6 +303,12 @@ func TestCombineEncodings(t *testing.T) {
 		}
 	}
 
+	out = filepath.Join(t.TempDir(), "text.ged")
+	code, _, stderr = run(t, "combine", "--strategy", "prefix", "--prefix", "A_", sample, ansel, "-o", out)
+	if want := "gedcom: warning: 1 differing header value from later files dropped (see --format json)\n"; code != ExitOK || stderr != want {
+		t.Errorf("text: exit = %d, stderr = %q, want %q", code, stderr, want)
+	}
+
 	v7 := writeTemp(t, "v7.ged", "0 HEAD\n1 GEDC\n2 VERS 7.0\n0 @I9@ INDI\n0 TRLR\n")
 	out = filepath.Join(t.TempDir(), "mixed.ged")
 	code, _, stderr = run(t, "combine", "--strategy", "zip", sample, v7, "-o", out)

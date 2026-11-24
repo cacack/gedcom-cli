@@ -94,10 +94,11 @@ The files must share a GEDCOM version (5.5, 5.5.1 or 7.0); mixing them
 fails. They may declare different encodings (ANSEL, UTF-8, ...): each is
 decoded as it declares, and the output is always UTF-8 (JSON "encoding"
 gives each input's). The header is the first file's: what a later file's
-header holds beyond it is dropped, and listed in JSON "header_conflicts".
+header holds beyond it is dropped, and listed in JSON "header_conflicts"
+(in text, a warning on stderr counts the values that differed).
 
 The output is written normalized, since it was read from no one file. Given
-one file, combine writes it back exactly as it was read.
+one UTF-8 file, combine writes it back exactly as it was read.
 --redact-living applies to the output file, not only to the report.`,
 		Example: `  gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
   gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
@@ -155,7 +156,7 @@ one file, combine writes it back exactly as it was read.
 				for i, c := range report.Conflicts {
 					xrefs[i] = c.XRef
 				}
-				return fmt.Errorf("%s conflict, nothing written: %s", count(len(xrefs), "record", "records"), strings.Join(xrefs, ", "))
+				return fmt.Errorf("%s conflict, nothing written: %s", pluralize(len(xrefs), "record", "records"), strings.Join(xrefs, ", "))
 			}
 
 			if living.redact {
@@ -167,6 +168,9 @@ one file, combine writes it back exactly as it was read.
 			}
 			if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
 				return err
+			}
+			if n := droppedHeaderValues(report.HeaderConflicts); n > 0 && format != formatJSON {
+				fmt.Fprintf(cmd.ErrOrStderr(), "gedcom: warning: %s from later files dropped (see --format json)\n", pluralize(n, "differing header value", "differing header values"))
 			}
 			report.Output = out
 			report.Records = len(doc.Records)
@@ -246,8 +250,8 @@ func printCombineReport(cmd *cobra.Command, format string, report combineReport)
 		return nil
 	}
 	if _, err := fmt.Fprintf(w, "wrote %s: %s, %s, %s\n", report.Output,
-		count(report.Records, "record", "records"), count(report.Individuals, "individual", "individuals"),
-		count(report.Families, "family", "families")); err != nil {
+		pluralize(report.Records, "record", "records"), pluralize(report.Individuals, "individual", "individuals"),
+		pluralize(report.Families, "family", "families")); err != nil {
 		return err
 	}
 	for _, in := range report.Inputs {
@@ -260,8 +264,21 @@ func printCombineReport(cmd *cobra.Command, format string, report combineReport)
 	return nil
 }
 
-// count is n with the noun that fits it.
-func count(n int, one, many string) string {
+// droppedHeaderValues counts the header conflicts where a later file's value
+// differed from the one kept. A "Tags." conflict is not counted: the library
+// reports one for every header structure a later file repeats, alike or not.
+func droppedHeaderValues(conflicts []combineHeaderConflict) int {
+	n := 0
+	for _, c := range conflicts {
+		if !strings.HasPrefix(c.Field, "Tags.") {
+			n++
+		}
+	}
+	return n
+}
+
+// pluralize is n with the noun that fits it.
+func pluralize(n int, one, many string) string {
 	if n == 1 {
 		return fmt.Sprintf("%d %s", n, one)
 	}

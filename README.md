@@ -441,7 +441,9 @@ cousin.ged	@I1@	@C_I1@
 
 Each renamed xref is a line (file, old, new); `--format json` gives the same
 as a `remapped` map per input. The files must share a GEDCOM version; they may
-declare different encodings, and the output is UTF-8.
+declare different encodings, and the output is UTF-8. The header is the first
+file's; a later file's differing header values are dropped (a warning on
+stderr, or `header_conflicts` in JSON).
 
 Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 
@@ -450,10 +452,11 @@ Run `gedcom --help` or `gedcom <command> --help` for every command and flag.
 These hold for every command, so scripts and agents can rely on them:
 
 - **Results go to stdout, diagnostics to stderr.** Stderr is empty on
-  success, except for a warning that a result is incomplete (`duplicates`)
-  or that a pointer was dropped (`extract`). A write command given `-o -`
-  puts the file on stdout and its report on stderr; with `--format json`
-  stderr then holds only that JSON report.
+  success, except for a warning that a result is incomplete (`duplicates`,
+  or `combine` dropping a later file's differing header values) or that a
+  pointer was dropped (`extract`). A write command given `-o -` puts the file
+  on stdout and its report on stderr; with `--format json` stderr then holds
+  only that JSON report.
 - **`--format json`** gives machine-readable output; the default is text.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error), `validate` found errors or `combine` found conflicts, `2` the command
