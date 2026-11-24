@@ -504,7 +504,7 @@ These hold for every command, so scripts and agents can rely on them:
 
 - **Results go to stdout, diagnostics to stderr.** Stderr is empty on
   success, except for a warning that a result is incomplete (`duplicates`,
-  or `combine` dropping a later file's differing header values) or that a
+  or `combine` dropping a later file's header values) or that a
   pointer was dropped (`extract`). A write command given `-o -` puts the file
   on stdout and its report on stderr; with `--format json` stderr then holds
   only that JSON report.

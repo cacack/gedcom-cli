@@ -132,9 +132,11 @@ every input is kept.
 The files must share a GEDCOM version (5.5, 5.5.1 or 7.0); mixing them
 fails. They may declare different encodings (ANSEL, UTF-8, ...): each is
 decoded as it declares, and the output is always UTF-8 (JSON "encoding"
-gives each input's). The header is the first file's: what a later file's
-header holds beyond it is dropped, and listed in JSON "header_conflicts"
-(in text, a warning on stderr counts the values that differed).
+gives each input's). The header is the first file's alone, under every
+strategy: each structure of a later file's header (its SOUR, DEST, NOTE,
+vendor tags, ...) is dropped, and listed in JSON "header_conflicts" (in
+text, a warning on stderr counts the values that differed or that the first
+file's header lacks).
 
 The output is written normalized, since it was read from no one file. Given
 one UTF-8 file, combine writes it back exactly as it was read.
@@ -312,6 +314,9 @@ func combineDocuments(files []string, docs []*gedcom.Document, name string, pref
 			// Every input is decoded to Unicode and the output is UTF-8,
 			// so a declared encoding is provenance only.
 			IgnoreEncodingMismatch: true,
+			// The header is the first file's alone: every later file's
+			// header structure is dropped and listed in header_conflicts.
+			KeepFirstHeader: true,
 			// Keep going so that every conflict is reported; nothing is
 			// written when there is one.
 			KeepFirstOnConflict: true,
@@ -384,12 +389,13 @@ func printCombineReport(w io.Writer, format string, report combineReport) error 
 }
 
 // droppedHeaderValues counts the header conflicts where a later file's value
-// differed from the one kept. A "Tags." conflict is not counted: the library
-// reports one for every header structure a later file repeats, alike or not.
+// differed from the one kept, or was not in the first file's header at all. A
+// "Tags." conflict for a structure the first file also has (Kept "kept") is
+// not counted: the library reports one for every such structure, alike or not.
 func droppedHeaderValues(conflicts []combineHeaderConflict) int {
 	n := 0
 	for _, c := range conflicts {
-		if !strings.HasPrefix(c.Field, "Tags.") {
+		if !strings.HasPrefix(c.Field, "Tags.") || c.Kept == "" {
 			n++
 		}
 	}
