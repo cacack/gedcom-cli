@@ -190,22 +190,39 @@ func TestRedactLiving(t *testing.T) {
 }
 
 // TestConvertRedactLivingRenamedXRef checks that convert hides what its report
-// says about a living person whose xref conversion to 7.0 renames.
+// says about a living person whose xref conversion to 7.0 renames, also when
+// --fail-on-loss stops the conversion, and keeps the note that maps the xref.
 func TestConvertRedactLivingRenamedXRef(t *testing.T) {
 	in := writeTemp(t, "in.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n"+
-		"0 @esme@ INDI\n1 NAME Esme /Example/\n1 BIRT\n2 DATE 31 FEB 1980\n0 TRLR\n")
-	out := filepath.Join(t.TempDir(), "out.ged")
-	code, stdout, stderr := run(t, "--redact-living", "--reference-year", referenceYear, "convert", in, "--to", "7.0", "-o", out)
-	if code != ExitOK {
-		t.Fatalf("exit = %d, stderr = %q", code, stderr)
-	}
-	if !strings.Contains(stdout, "validation (1)\n  Living\n") {
-		t.Errorf("stdout lacks the redacted validation issue:\n%s", stdout)
-	}
-	for _, detail := range []string{"Esme", "1980", "31 FEB"} {
-		if strings.Contains(stdout, detail) {
-			t.Errorf("output shows %q:\n%s", detail, stdout)
-		}
+		"0 @esme@ INDI\n1 NAME Esme /Example/\n1 BIRT\n2 DATE 10 FEB 1980/81\n"+
+		"1 RESI\n2 DATE @#DJULIAN@ 5 MAR 1985\n0 TRLR\n")
+	for _, tc := range []struct {
+		name string
+		flag []string
+		code int
+	}{
+		{"written", nil, ExitOK},
+		{"fail on loss", []string{"--fail-on-loss"}, ExitError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "out.ged")
+			args := append([]string{"--redact-living", "--reference-year", referenceYear, "convert"}, tc.flag...)
+			code, stdout, stderr := run(t, append(args, in, "--to", "7.0", "-o", out)...)
+			if code != tc.code {
+				t.Fatalf("exit = %d, want %d, stderr = %q", code, tc.code, stderr)
+			}
+			if !strings.Contains(stdout, "Individual @esme@\t@esme@\t@ESME@\t") {
+				t.Errorf("stdout lacks the xref rename:\n%s", stdout)
+			}
+			if !strings.Contains(stdout, "Individual @ESME@ > BIRT > DATE\tLiving\tLiving\tLiving\n") {
+				t.Errorf("stdout lacks the redacted date note:\n%s", stdout)
+			}
+			for _, detail := range []string{"Esme", "1980", "1985", "JULIAN"} {
+				if strings.Contains(stdout, detail) {
+					t.Errorf("output shows %q:\n%s", detail, stdout)
+				}
+			}
+		})
 	}
 }
 

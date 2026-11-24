@@ -89,8 +89,9 @@ and exits 1, with the report still printed.
 
 With --redact-living, what the report says about a presumed-living person
 reads Living: a decode finding on a line of their record, and a note,
-transformation detail or validation issue naming it. The file written is not
-redacted.`,
+transformation detail or validation issue naming it. The note that renames
+their xref for 7.0 is kept, as an xref is not redacted. The file written is
+not redacted.`,
 		Example: `  gedcom convert legacy.ged --to 5.5.1 -o legacy-utf8.ged
   gedcom convert --fail-on-loss legacy.ged --to 7.0 -o legacy-v7.ged
   gedcom convert --format json legacy.ged --to 5.5.1 -o out.ged | jq .dataLoss`,
@@ -160,11 +161,6 @@ func convertFile(cmd *cobra.Command, in, out string, to gedcom.Version, failOnLo
 	report := newConvertReport(in, out, lib)
 	report.Decode = decode
 	if living.redact {
-		// Conversion may rename a record (7.0 xrefs are uppercase), and the
-		// report may name it by either xref.
-		if converted != nil {
-			hidden = append(hidden, xrefsOf(hiddenRecords(converted, presumedLiving(converted, living.cfg)))...)
-		}
 		redactConvertReport(report, hidden)
 	}
 	if errors.Is(err, converter.ErrDataLoss) {
@@ -208,14 +204,24 @@ func newConvertReport(in, out string, r *gedcom.ConversionReport) *convertReport
 // redactConvertReport hides what the report says about a record named by one
 // of xrefs: a note's original, result and reason, a transformation detail and
 // a validation issue read Living. The library reports these as text, so an
-// entry is matched by the xref it names.
+// entry is matched by the xref it names. Conversion to 7.0 may rename a
+// record, and its normalized note maps the xref to the new one: that note is
+// kept, as an xref is not redacted, and the new xref is hidden too.
 func redactConvertReport(r *convertReport, xrefs []string) {
+	isRename := func(n conversionNote) bool {
+		return slices.Contains(xrefs, n.Original) && strings.HasPrefix(n.Result, "@") && strings.HasSuffix(n.Result, "@")
+	}
+	for _, n := range r.Normalized {
+		if isRename(n) {
+			xrefs = append(xrefs, n.Result)
+		}
+	}
 	names := func(s string) bool {
 		return slices.ContainsFunc(xrefs, func(x string) bool { return strings.Contains(s, x) })
 	}
 	for _, ns := range [][]conversionNote{r.Dropped, r.Approximated, r.Normalized, r.Preserved} {
 		for i, n := range ns {
-			if names(n.Path) || names(n.Original) || names(n.Result) {
+			if !isRename(n) && (names(n.Path) || names(n.Original) || names(n.Result)) {
 				ns[i].Original, ns[i].Result, ns[i].Reason = redactedValue, redactedValue, redactedValue
 			}
 		}
