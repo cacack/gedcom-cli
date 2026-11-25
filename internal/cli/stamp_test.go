@@ -8,9 +8,10 @@ import (
 	"testing"
 )
 
-// stampLines are the header lines a stamp writes in place of the input's SOUR.
-func stampLines() string {
-	return "1 SOUR gedcom-cli\n2 VERS " + version() + "\n2 NAME gedcom-cli\n"
+// stampLines are the header lines a stamp writes in place of the input's SOUR,
+// followed by data, the DATA it keeps (none in a 7.0 file).
+func stampLines(data string) string {
+	return "1 SOUR gedcom-cli\n2 VERS " + version() + "\n2 NAME gedcom-cli\n" + data
 }
 
 // stampBody is the records of the stamp fixtures: a submitter and two people
@@ -30,7 +31,9 @@ const stampBody = `0 @U1@ SUBM
 // program, with its version, name and corporation, and the lines that
 // describe its export (DEST, DATE, FILE), beside lines a stamp keeps. want is
 // each header stamped as a new dataset (combine, extract), and edited each
-// header stamped by --stamp (put, merge-*), which replaces only the SOUR.
+// header stamped by --stamp (put, merge-*), which replaces only the SOUR. A
+// 5.x stamp keeps the input's source as SOUR DATA; a 7.0 stamp writes none,
+// since 7.0 deprecates HEAD.SOUR.DATA.
 var stampFixtures = []struct {
 	name, header, want, edited string
 }{
@@ -54,7 +57,7 @@ var stampFixtures = []struct {
 1 CHAR UTF-8
 1 NOTE A header note
 `,
-		want: "0 HEAD\n" + stampLines() + `1 SUBM @U1@
+		want: "0 HEAD\n" + stampLines("2 DATA ExampleSoft\n") + `1 SUBM @U1@
 1 COPR Copyright Example
 1 GEDC
 2 VERS 5.5.1
@@ -62,7 +65,7 @@ var stampFixtures = []struct {
 1 CHAR UTF-8
 1 NOTE A header note
 `,
-		edited: "0 HEAD\n" + stampLines() + `1 DEST ExampleDest
+		edited: "0 HEAD\n" + stampLines("2 DATA ExampleSoft\n") + `1 DEST ExampleDest
 1 DATE 1 JAN 2020
 2 TIME 12:00:00
 1 SUBM @U1@
@@ -91,11 +94,11 @@ var stampFixtures = []struct {
 1 COPR Copyright Example
 1 NOTE A header note
 `,
-		want: "0 HEAD\n1 GEDC\n2 VERS 7.0\n" + stampLines() + `1 SUBM @U1@
+		want: "0 HEAD\n1 GEDC\n2 VERS 7.0\n" + stampLines("") + `1 SUBM @U1@
 1 COPR Copyright Example
 1 NOTE A header note
 `,
-		edited: "0 HEAD\n1 GEDC\n2 VERS 7.0\n" + stampLines() + `1 DEST ExampleDest
+		edited: "0 HEAD\n1 GEDC\n2 VERS 7.0\n" + stampLines("") + `1 DEST ExampleDest
 1 DATE 1 JAN 2020
 2 TIME 12:00:00
 1 SUBM @U1@
@@ -103,6 +106,26 @@ var stampFixtures = []struct {
 1 NOTE A header note
 `,
 	},
+}
+
+// TestStampKeepsSourceData holds that a 5.x stamp carries the input's own SOUR
+// DATA, with every line under it, rather than naming the input's SOUR.
+func TestStampKeepsSourceData(t *testing.T) {
+	header := strings.Replace(stampFixtures[0].header, "3 ADDR 1 Example Road\n",
+		"3 ADDR 1 Example Road\n2 DATA Example Census Disc\n3 DATE 1 JAN 2019\n3 COPR Example Copyright\n", 1)
+	in := writeTemp(t, "in.ged", header+stampBody)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "--format", "json", "extract", in, "I1", "-o", out)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	want := "0 HEAD\n" + stampLines("2 DATA Example Census Disc\n3 DATE 1 JAN 2019\n3 COPR Example Copyright\n")
+	if got := headerText(fileText(t, out)); !strings.HasPrefix(got, want) {
+		t.Errorf("header =\n%s\nwant it to start\n%s", got, want)
+	}
+	if !strings.Contains(stdout, `"stamped_from": "ExampleSoft"`) {
+		t.Errorf("report does not give the replaced SOUR:\n%s", stdout)
+	}
 }
 
 // withFlag is args, a command and its arguments, with flag after the command.
@@ -148,8 +171,8 @@ func TestStampNewDatasets(t *testing.T) {
 				if code != ExitOK {
 					t.Fatalf("exit = %d, stderr = %q", code, stderr)
 				}
-				if !strings.Contains(stdout, `"stamped": true`) {
-					t.Errorf("report does not say the header was stamped:\n%s", stdout)
+				if !strings.Contains(stdout, `"stamped": true`) || !strings.Contains(stdout, `"stamped_from": "ExampleSoft"`) {
+					t.Errorf("report does not say the header was stamped, from ExampleSoft:\n%s", stdout)
 				}
 				if got := headerText(fileText(t, out)); got != fx.want {
 					t.Errorf("header =\n%s\nwant\n%s", got, fx.want)
@@ -185,8 +208,8 @@ func TestStampEditingCommands(t *testing.T) {
 		args func(in, out string) []string
 		text string // the report's line that says the header was stamped
 	}{
-		{"put", func(in, out string) []string { return []string{"put", in, empty, "-o", out} }, "0 unchanged, header stamped\n"},
-		{"merge-people", func(in, out string) []string { return []string{"merge-people", in, "@I1@", "@I2@", "-o", out} }, "\nstamped\tHEAD\n"},
+		{"put", func(in, out string) []string { return []string{"put", in, empty, "-o", out} }, "0 unchanged, header stamped (SOUR was ExampleSoft)\n"},
+		{"merge-people", func(in, out string) []string { return []string{"merge-people", in, "@I1@", "@I2@", "-o", out} }, "\nstamped\tHEAD\tExampleSoft\n"},
 	}
 	for _, fx := range stampFixtures {
 		input := fx.header + stampBody

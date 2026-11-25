@@ -91,6 +91,8 @@ type mergeReport struct {
 	// Stamped says the file written, which every pair's report shares, had
 	// its header stamped.
 	Stamped bool `json:"stamped"`
+	// StampedFrom is the value of the SOUR the stamp replaced.
+	StampedFrom string `json:"stamped_from,omitempty"`
 	// Candidates is set by merge-people only.
 	Candidates *[]familyCandidate `json:"candidates,omitempty"`
 	// Dropped is set by merge-sources and merge-repositories only.
@@ -468,11 +470,12 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 			return err
 		}
 		if stamp {
-			if err := stampHeader(doc); err != nil {
+			from, err := stampHeader(doc)
+			if err != nil {
 				return err
 			}
 			for _, report := range reports {
-				report.Stamped = true
+				report.Stamped, report.StampedFrom = true, from
 			}
 		}
 		if err := writeOutput(cmd, out, doc); err != nil {
@@ -653,7 +656,7 @@ func writeMergeText(w io.Writer, r *mergeReport, prefix string) error {
 		}
 	}
 	if r.Stamped {
-		lines = append(lines, "stamped\tHEAD")
+		lines = append(lines, strings.TrimSuffix("stamped\tHEAD\t"+r.StampedFrom, "\t"))
 	}
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(w, prefix+line); err != nil {

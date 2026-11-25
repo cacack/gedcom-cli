@@ -18,7 +18,7 @@ const extractFixture = "testdata/extract.ged"
 // extractWant is the bounded subset of Ada and Eve: the parents and Dan are
 // cut, and so is the source only the mother cites. Its header is stamped.
 var extractWant = `0 HEAD
-` + stampLines() + `1 GEDC
+` + stampLines("2 DATA gedcom-cli-test\n") + `1 GEDC
 2 VERS 5.5.1
 2 FORM LINEAGE-LINKED
 1 CHAR UTF-8
@@ -69,7 +69,7 @@ func TestExtractText(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	if want := "wrote " + out + ": 9 records, 2 individuals, 2 families, 3 pointers dropped, header stamped\n"; stdout != want {
+	if want := "wrote " + out + ": 9 records, 2 individuals, 2 families, 3 pointers dropped, header stamped (SOUR was gedcom-cli-test)\n"; stdout != want {
 		t.Errorf("stdout = %q, want %q", stdout, want)
 	}
 	if stderr != extractWarnings {
@@ -100,7 +100,7 @@ func TestExtractJSON(t *testing.T) {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
 	want := extractReport{
-		Output: out, Records: 9, Individuals: 2, Families: 2, Stamped: true,
+		Output: out, Records: 9, Individuals: 2, Families: 2, Stamped: true, StampedFrom: "gedcom-cli-test",
 		Dropped: []droppedPointer{
 			{XRef: "@F1@", Tag: "HUSB", Target: "@I2@", Restorable: true, Position: 1},
 			{XRef: "@F1@", Tag: "WIFE", Target: "@I3@", Restorable: true, Position: 2},
@@ -140,7 +140,7 @@ func TestExtractStdin(t *testing.T) {
 	if stdout != extractWant {
 		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, extractWant)
 	}
-	if want := extractWarnings + "wrote stdout: 9 records, 2 individuals, 2 families, 3 pointers dropped, header stamped\n"; stderr != want {
+	if want := extractWarnings + "wrote stdout: 9 records, 2 individuals, 2 families, 3 pointers dropped, header stamped (SOUR was gedcom-cli-test)\n"; stderr != want {
 		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 }

@@ -448,7 +448,7 @@ gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
 ```text
 gedcom: warning: dropped pointer @F3@ HUSB @I7@ (restorable)
 gedcom: warning: dropped pointer @F3@ WIFE @I8@ (restorable)
-wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped, header stamped
+wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped, header stamped (SOUR was ExampleSoft)
 ```
 
 A pointer to an individual or family left out (a family's `HUSB` for a
@@ -703,7 +703,7 @@ gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
 ```
 
 ```text
-wrote both.ged: 412 records, 260 individuals, 98 families, header stamped
+wrote both.ged: 412 records, 260 individuals, 98 families, header stamped (SOUR was ExampleSoft)
 cousin.ged	@F1@	@C_F1@
 cousin.ged	@F2@	@C_F2@
 cousin.ged	@I1@	@C_I1@
@@ -734,10 +734,14 @@ These hold for every command, so scripts and agents can rely on them:
   and write the header as read; `put` and the merge commands take `--stamp`
   to replace its `SOUR` structure the same way, leaving every other line,
   and `gedcom put --stamp file.ged /dev/null -o out.ged` does that to the
-  output of any of them. The input's `SOUR` is not copied anywhere:
-  `get <input> HEAD` prints it. The report says when the header was stamped
-  (`stamped` in JSON; `header stamped` in a summary line, a `stamped HEAD`
-  line in a merge report).
+  output of any of them. In a 5.5 or 5.5.1 file the stamp keeps where the
+  data came from as `2 DATA` under the new `SOUR`: the input's own `SOUR.DATA`
+  with its lines, or else the input's `SOUR` value. GEDCOM 7.0 deprecates
+  `HEAD.SOUR.DATA`, so a 7.0 header gets none. The report says when the
+  header was stamped and what its `SOUR` was (`stamped` and `stamped_from` in
+  JSON; `header stamped (SOUR was ...)` in a summary line, a `stamped HEAD`
+  line in a merge report). [docs/spec-references.md](docs/spec-references.md)
+  quotes the specification text this rule follows.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error), `validate` found errors or `combine` found conflicts, `2` the command
   line was wrong.

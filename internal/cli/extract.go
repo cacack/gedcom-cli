@@ -14,11 +14,13 @@ import (
 // extractReport is what extract prints: the file written, what it holds, and
 // the pointers cut at the boundary.
 type extractReport struct {
-	Output      string           `json:"output"`
-	Records     int              `json:"records"`
-	Individuals int              `json:"individuals"`
-	Families    int              `json:"families"`
-	Stamped     bool             `json:"stamped"`
+	Output      string `json:"output"`
+	Records     int    `json:"records"`
+	Individuals int    `json:"individuals"`
+	Families    int    `json:"families"`
+	Stamped     bool   `json:"stamped"`
+	// StampedFrom is the value of the SOUR the stamp replaced.
+	StampedFrom string           `json:"stamped_from,omitempty"`
 	Dropped     []droppedPointer `json:"dropped"`
 }
 
@@ -161,8 +163,9 @@ once the whole file is written.
 			// does. A Layout is safe to share: the encoder writes a source
 			// line only where the record still reads as it.
 			branch.Layout = doc.Layout
+			from := ""
 			if stamp {
-				if err := stampHeader(branch, exportStructures...); err != nil {
+				if from, err = stampHeader(branch, exportStructures...); err != nil {
 					return err
 				}
 			}
@@ -170,7 +173,7 @@ once the whole file is written.
 				return err
 			}
 			report := newExtractReport(out, branch, dropped)
-			report.Stamped = stamp
+			report.Stamped, report.StampedFrom = stamp, from
 			// With -o - and JSON the report goes to stderr, and its dropped
 			// list stands in for the warnings so stderr is one JSON document.
 			if out != stdio || format != formatJSON {
@@ -185,7 +188,7 @@ once the whole file is written.
 			_, err = fmt.Fprintf(w, "wrote %s: %s, %s, %s, %s dropped%s\n", outputName(out),
 				plural(report.Records, "record", "records"), plural(report.Individuals, "individual", "individuals"),
 				plural(report.Families, "family", "families"), plural(len(report.Dropped), "pointer", "pointers"),
-				stampedText(report.Stamped))
+				stampedText(report.Stamped, report.StampedFrom))
 			return err
 		},
 	}

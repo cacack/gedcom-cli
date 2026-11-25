@@ -319,7 +319,7 @@ func TestCombineZipJSON(t *testing.T) {
 		headerConflicts = append(headerConflicts, combineHeaderConflict{File: branches[1], Field: "Tags." + tag, Kept: "kept", Dropped: "dropped (KeepFirstHeader keeps doc1's header alone)"})
 	}
 	want := combineReport{
-		Output: out, Strategy: "zip", Stamped: true, Records: 15, Individuals: 8, Families: 3,
+		Output: out, Strategy: "zip", Stamped: true, StampedFrom: "gedcom-cli-test", Records: 15, Individuals: 8, Families: 3,
 		Inputs: []combineInput{
 			{File: branches[0], Encoding: "UTF-8", Remapped: map[string]string{}},
 			{File: branches[1], Encoding: "UTF-8", Remapped: map[string]string{}},
@@ -430,7 +430,7 @@ func TestCombinePrefix(t *testing.T) {
 	}
 	// minimal holds 4 records, combine 15; every one is kept, and every one
 	// of a later file is a line of the report.
-	want := "wrote " + out + ": 23 records, 12 individuals, 5 families, header stamped\n"
+	want := "wrote " + out + ": 23 records, 12 individuals, 5 families, header stamped (SOUR was gedcom-cli-test)\n"
 	wantXRefs := slices.Clone(first)
 	for _, in := range []struct {
 		file, prefix string

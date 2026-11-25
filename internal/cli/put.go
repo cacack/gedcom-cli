@@ -17,16 +17,18 @@ import (
 // putReport is what put did: the records it replaced, added and left as they
 // were, and what the decoder could not read cleanly in the fragment.
 type putReport struct {
-	Input     string         `json:"input"`
-	Records   string         `json:"records"`
-	Output    string         `json:"output"`
-	Written   bool           `json:"written"`
-	Stamped   bool           `json:"stamped"`
-	Replaced  []string       `json:"replaced"`
-	Added     []string       `json:"added"`
-	Unchanged []string       `json:"unchanged"`
-	Counts    severityCounts `json:"counts"`
-	Findings  []finding      `json:"findings"`
+	Input   string `json:"input"`
+	Records string `json:"records"`
+	Output  string `json:"output"`
+	Written bool   `json:"written"`
+	Stamped bool   `json:"stamped"`
+	// StampedFrom is the value of the SOUR the stamp replaced.
+	StampedFrom string         `json:"stamped_from,omitempty"`
+	Replaced    []string       `json:"replaced"`
+	Added       []string       `json:"added"`
+	Unchanged   []string       `json:"unchanged"`
+	Counts      severityCounts `json:"counts"`
+	Findings    []finding      `json:"findings"`
 }
 
 func newPutCmd() *cobra.Command {
@@ -161,7 +163,7 @@ func putRecords(cmd *cobra.Command, in, records, out string) (*putReport, error)
 		return nil, err
 	}
 	if stamp {
-		if err := stampHeader(doc); err != nil {
+		if report.StampedFrom, err = stampHeader(doc); err != nil {
 			return nil, err
 		}
 	}
@@ -207,7 +209,7 @@ func writePutText(w io.Writer, r *putReport) error {
 	var b strings.Builder
 	if r.Written {
 		fmt.Fprintf(&b, "wrote %s: %d replaced, %d added, %d unchanged%s\n",
-			outputName(r.Output), len(r.Replaced), len(r.Added), len(r.Unchanged), stampedText(r.Stamped))
+			outputName(r.Output), len(r.Replaced), len(r.Added), len(r.Unchanged), stampedText(r.Stamped, r.StampedFrom))
 	} else {
 		fmt.Fprintf(&b, "%s not written\n", outputName(r.Output))
 	}

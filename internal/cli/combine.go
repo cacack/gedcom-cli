@@ -36,9 +36,11 @@ var combineStrategies = map[string]merge.CollisionStrategy{
 // combineReport is what combine prints: the file written, what it holds, what
 // each input's xrefs became, and what could not be joined.
 type combineReport struct {
-	Output          string                  `json:"output"`
-	Strategy        string                  `json:"strategy"`
-	Stamped         bool                    `json:"stamped"`
+	Output   string `json:"output"`
+	Strategy string `json:"strategy"`
+	Stamped  bool   `json:"stamped"`
+	// StampedFrom is the value of the SOUR the stamp replaced.
+	StampedFrom     string                  `json:"stamped_from,omitempty"`
 	Records         int                     `json:"records"`
 	Individuals     int                     `json:"individuals"`
 	Families        int                     `json:"families"`
@@ -238,10 +240,11 @@ read. --redact-living applies to the output file, not only to the report.
 				}
 			}
 			if stamp {
-				if err := stampHeader(doc, exportStructures...); err != nil {
+				from, err := stampHeader(doc, exportStructures...)
+				if err != nil {
 					return err
 				}
-				report.Stamped = true
+				report.Stamped, report.StampedFrom = true, from
 			}
 			if err := writeOutput(cmd, out, doc); err != nil {
 				return err
@@ -392,7 +395,7 @@ func printCombineReport(w io.Writer, format string, report combineReport) error 
 	}
 	if _, err := fmt.Fprintf(w, "wrote %s: %s, %s, %s%s\n", report.Output,
 		plural(report.Records, "record", "records"), plural(report.Individuals, "individual", "individuals"),
-		plural(report.Families, "family", "families"), stampedText(report.Stamped)); err != nil {
+		plural(report.Families, "family", "families"), stampedText(report.Stamped, report.StampedFrom)); err != nil {
 		return err
 	}
 	for _, in := range report.Inputs {
