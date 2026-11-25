@@ -100,8 +100,11 @@ gedcom get family.ged @I1@
 gedcom get family.ged I1 F1          # the @ delimiters are optional
 gedcom get family.ged HEAD           # the header
 gedcom get --format json family.ged @I1@
+gedcom list --format json family.ged fam | jq -r '.[].xref' | gedcom get family.ged -
 ```
 
+`-` reads more xrefs from stdin, as for [`extract`](#extract), printed where
+`-` stands among the arguments; the file is read once however many there are.
 With `--format json` each record is gedcom-go's own shape for it, plus a
 `Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`, and `HEAD` for the
 header). `put` takes records back, not the header.
