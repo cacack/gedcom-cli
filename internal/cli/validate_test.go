@@ -86,7 +86,7 @@ func TestValidateProblemsText(t *testing.T) {
 		t.Errorf("info findings shown at the default --min-severity:\n%s", stdout)
 	}
 	for _, want := range []string{
-		"line 13\tINVALID_LEVEL\t",
+		"@I1@ line 13\tINVALID_LEVEL\t",
 		"\tdecode\n",
 		"@I1@\tDEATH_BEFORE_BIRTH\t",
 		"@I1@ line 18\tORPHANED_FAMS\t",
@@ -119,11 +119,47 @@ func TestValidateProblemsJSON(t *testing.T) {
 			t.Errorf("finding %d (%s) has no message", i, got.Code)
 		}
 	}
-	if d := report.Findings[0]; d.Line != 13 || d.Context != "this line is not GEDCOM" || d.XRef != "" {
+	if d := report.Findings[0]; d.Line != 13 || d.Context != "this line is not GEDCOM" || d.XRef != "@I1@" {
 		t.Errorf("decode diagnostic = %+v", d)
 	}
 	if f := report.Findings[2]; f.XRef != "@I1@" || f.RelatedXRef != "@F9@" || f.Line != 18 {
 		t.Errorf("ORPHANED_FAMS = %+v", f)
+	}
+}
+
+// TestValidateDecodeFindingXRef checks that a decode finding names the record
+// its line is in, and that one in the header names none.
+func TestValidateDecodeFindingXRef(t *testing.T) {
+	const fixture = "testdata/decode-xref.ged"
+	code, report, stdout, _ := validateJSON(t, fixture)
+	if code != ExitError || len(report.Findings) != 3 {
+		t.Fatalf("exit = %d, findings = %+v", code, report.Findings)
+	}
+	header, record := report.Findings[0], report.Findings[1]
+	if header.Source != sourceDecode || header.Code != "INVALID_LEVEL" || header.Line != 7 || header.XRef != "" {
+		t.Errorf("header finding = %+v, want no xref", header)
+	}
+	if record.Source != sourceDecode || record.Code != "INVALID_VALUE" || record.Line != 15 || record.XRef != "@I1@" {
+		t.Errorf("record finding = %+v, want xref @I1@", record)
+	}
+	// The key is absent, not empty, on a finding outside any record.
+	if strings.Count(stdout, `"xref"`) != 2 {
+		t.Errorf("want an xref key on the two findings in records only:\n%s", stdout)
+	}
+
+	code, stdout, _ = run(t, "validate", fixture)
+	if code != ExitError {
+		t.Fatalf("exit = %d", code)
+	}
+	for _, want := range []string{"\n  line 7\tINVALID_LEVEL\t", "\n  @I1@ line 15\tINVALID_VALUE\t", "\n  @F1@ line 19\tINVALID_DATE\t"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+
+	_, stdout, _ = run(t, "validate", "--help")
+	if !strings.Contains(stdout, "xref is the record a validate finding is\nabout, or the record a decode finding's line is in") {
+		t.Errorf("help does not document the xref key:\n%s", stdout)
 	}
 }
 

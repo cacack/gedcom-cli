@@ -61,6 +61,12 @@ depend on it: 1 when the file has any error-severity finding, otherwise 0.
 With --format json, exit 1 with a report on stdout means the file has errors;
 exit 1 with nothing on stdout means the file could not be read.
 
+Each JSON finding has source, severity, code and message, and when known
+line, xref, relatedXref and context. xref is the record a validate finding is
+about, or the record a decode finding's line is in, for 'gedcom get' and
+'gedcom put'; a decode finding in the header or outside any record has none.
+The text format starts each line with the xref and the line number.
+
 Findings are the library's, as reported. The decoder and the validator both
 report a duplicated xref, so DUPLICATE_XREF appears once per source. A family
 link only one record claims (a FAMS, FAMC, HUSB, WIFE or CHIL the other
@@ -167,6 +173,7 @@ func decodeFindings(diags decoder.Diagnostics) []finding {
 			Code:     d.Code,
 			Message:  d.Message,
 			Line:     d.Line,
+			XRef:     d.XRef,
 			Context:  d.Context,
 		})
 	}

@@ -239,7 +239,7 @@ gedcom validate --format json family.ged | jq .counts
 
 ```text
 error (2)
-  line 13	INVALID_LEVEL	invalid level number (context: "this line is not GEDCOM")	decode
+  @I1@ line 13	INVALID_LEVEL	invalid level number (context: "this line is not GEDCOM")	decode
   @I1@ line 18	ORPHANED_FAMS	FAMS reference to non-existent family @F9@ (related: @F9@)	validate
 warning (1)
   @I2@ line 19	MISSING_NAME	Individual record has no NAME	validate
@@ -249,6 +249,11 @@ A family link only one record claims, such as a `FAMS` to a family that does
 not name the person as `HUSB` or `WIFE`, is an `UNRECIPROCATED_<tag>` warning,
 where `<tag>` is the pointer that is there. It is reported on the individual,
 with the family as related xref.
+
+A finding's xref is the record it is about or, for a decode finding, the
+record its line is in, ready for `get` and `put`. A decode finding in the
+header or outside any record has none. In `--format json` it is the `xref`
+key, absent when there is none.
 
 A file with nothing to report prints `family.ged: no findings`. The exit code
 is `1` whenever the file has an error-severity finding, with the report still
@@ -435,8 +440,10 @@ wrote family-edited.ged: 1 replaced, 0 added, 0 unchanged
 ```
 
 Every line `put` was not asked to change is written exactly as it was read,
-so a record put back unedited leaves the output byte-identical. Pointers are
-not checked: run `validate` on the output.
+so a record put back unedited leaves the output byte-identical. What the
+decoder could not read cleanly in the records file is reported as `validate`
+reports it, with its xref and its line number in that file; an error stops
+the write. Pointers are not checked: run `validate` on the output.
 
 ### delete
 

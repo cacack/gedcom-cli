@@ -1,0 +1,24 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+this line is not GEDCOM
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Faye /Mock/
+1 SEX F
+1 BIRT
+2 DATE about the spring of 1950
+0 @F1@ FAM
+1 HUSB @I2@
+1 MARR
+2 DATE 31 FEB 1970
+0 @I2@ INDI
+1 NAME Hal /Mock/
+1 SEX M
+1 FAMS @F1@
+0 TRLR
