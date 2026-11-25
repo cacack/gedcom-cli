@@ -141,20 +141,25 @@ func findings(path string, withDuplicates bool, living livingOptions) ([]finding
 
 	all := decodeFindings(res.Diagnostics)
 	for _, i := range issues {
-		all = append(all, finding{
-			Source:      sourceValidate,
-			Severity:    severityName(i.Severity),
-			Code:        i.Code,
-			Message:     i.Message,
-			Line:        i.LineNumber,
-			XRef:        i.RecordXRef,
-			RelatedXRef: i.RelatedXRef,
-		})
+		all = append(all, validationFinding(i))
 	}
 	if living.redact {
 		redactFindings(all, res.Document, hiddenRecords(res.Document, presumedLiving(res.Document, living.cfg)))
 	}
 	return all, nil
+}
+
+// validationFinding is a validation issue as a finding.
+func validationFinding(i validator.Issue) finding {
+	return finding{
+		Source:      sourceValidate,
+		Severity:    severityName(i.Severity),
+		Code:        i.Code,
+		Message:     i.Message,
+		Line:        i.LineNumber,
+		XRef:        i.RecordXRef,
+		RelatedXRef: i.RelatedXRef,
+	}
 }
 
 // decodeFindings is the decoder's diagnostics as findings, in its order.

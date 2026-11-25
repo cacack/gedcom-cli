@@ -186,6 +186,21 @@ func TestNameValue(t *testing.T) {
 	}
 }
 
+// TestNameValueContinued checks that a new value replaces an old one carried
+// on CONC and CONT lines, which would otherwise be joined onto it.
+func TestNameValueContinued(t *testing.T) {
+	input := readFixture(t, names)
+	in := writeTemp(t, "in.ged", replaceOnce(t, input, "1 NAME Ada /Example/\n", "1 NAME Ada /Exam\n2 CONC ple/\n2 CONT x\n"))
+	code, got, stdout := runName(t, in, "@I1@", "1", "--value", "Ann /Example/")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+	want := replaceOnce(t, input, "1 NAME Ada /Example/\n2 GIVN Ada\n", "1 NAME Ann /Example/\n2 GIVN Ann\n")
+	if got != want {
+		t.Errorf("output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestNameJSON(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out.ged")
 	code, stdout, stderr := run(t, "name", "--format", "json", names, "@I1@", "2", "--move-to", "1", "--clear-type", "-o", out)

@@ -246,7 +246,11 @@ func editName(in, xref string, pos int, edit nameEdit, out string, opts livingOp
 		if err != nil {
 			return nil, err
 		}
+		// The new value replaces the whole old one, including any part of
+		// it carried on CONC or CONT lines.
 		name[0].Value = *edit.value
+		name = setNameLine(name, "CONC", "", false)
+		name = setNameLine(name, "CONT", "", false)
 		name = setNameLine(name, "GIVN", given, false)
 		name = setNameLine(name, "SURN", surname, false)
 		name = setNameLine(name, "NSFX", suffix, false)
@@ -398,15 +402,7 @@ func addedFindings(doc *gedcom.Document, before map[string]int) []finding {
 			before[key]--
 			continue
 		}
-		added = append(added, finding{
-			Source:      sourceValidate,
-			Severity:    severityName(i.Severity),
-			Code:        i.Code,
-			Message:     i.Message,
-			Line:        i.LineNumber,
-			XRef:        i.RecordXRef,
-			RelatedXRef: i.RelatedXRef,
-		})
+		added = append(added, validationFinding(i))
 	}
 	return added
 }
