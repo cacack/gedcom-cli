@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -518,9 +518,8 @@ wrote family-edited.ged: header replaced
 Every line outside the header is written exactly as it was read, and a header
 put back unedited leaves the output byte-identical. A header whose `GEDC.VERS`
 or `CHAR` differs from the file's, as `get` prints it, is refused: that is
-`convert`'s job. What
-the version requires of a header (`SOUR`, `SUBM`) is not checked: run
-`validate` on the output.
+`convert`'s job. What the version requires of a header (`SOUR`, `SUBM`) is
+not checked: run `validate` on the output.
 
 ### delete
 
@@ -736,11 +735,11 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `put-header`, `delete`, `name`, `media add`, `places apply`, the merge commands and
-  `convert` edit or rewrite the whole tree and write it unredacted. Source,
-  media, repository and submitter records are not redacted, even when a
-  hidden record cites them, and neither is the header (`get HEAD`):
-  check their titles, file names and addresses yourself. Use it before pasting
+  too: `put`, `put-header`, `delete`, `name`, `media add`, `places apply`,
+  the merge commands and `convert` edit or rewrite the whole tree and write
+  it unredacted. Source, media, repository and submitter records are not
+  redacted, even when a hidden record cites them, and neither is the header
+  (`get HEAD`): check their titles, file names and addresses yourself. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or
   cremation, and no date of the person's, of a family they are a spouse in or
