@@ -146,7 +146,7 @@ The output is written normalized, since it was read from no one file. Given
 one UTF-8 file and --keep-header, combine writes it back exactly as it was
 read. --redact-living applies to the output file, not only to the report.
 
-` + stampHelp,
+` + stampHelp + "\n\n" + exportStampHelp,
 		Example: `  gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
   gedcom combine paternal.ged maternal.ged --strategy zip --dropped maternal.json -o tree.ged
   gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
@@ -238,7 +238,7 @@ read. --redact-living applies to the output file, not only to the report.
 				}
 			}
 			if stamp {
-				if err := stampHeader(doc); err != nil {
+				if err := stampHeader(doc, exportStructures...); err != nil {
 					return err
 				}
 				report.Stamped = true

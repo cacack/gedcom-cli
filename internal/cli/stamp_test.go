@@ -29,9 +29,10 @@ const stampBody = `0 @U1@ SUBM
 // stampFixtures are a 5.5.1 and a 7.0 file whose header names another
 // program, with its version, name and corporation, and the lines that
 // describe its export (DEST, DATE, FILE), beside lines a stamp keeps. want is
-// each header stamped.
+// each header stamped as a new dataset (combine, extract), and edited each
+// header stamped by --stamp (put, merge-*), which replaces only the SOUR.
 var stampFixtures = []struct {
-	name, header, want string
+	name, header, want, edited string
 }{
 	{
 		name: "5.5.1",
@@ -61,6 +62,18 @@ var stampFixtures = []struct {
 1 CHAR UTF-8
 1 NOTE A header note
 `,
+		edited: "0 HEAD\n" + stampLines() + `1 DEST ExampleDest
+1 DATE 1 JAN 2020
+2 TIME 12:00:00
+1 SUBM @U1@
+1 FILE export.ged
+1 COPR Copyright Example
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 NOTE A header note
+`,
 	},
 	{
 		name: "7.0",
@@ -79,6 +92,13 @@ var stampFixtures = []struct {
 1 NOTE A header note
 `,
 		want: "0 HEAD\n1 GEDC\n2 VERS 7.0\n" + stampLines() + `1 SUBM @U1@
+1 COPR Copyright Example
+1 NOTE A header note
+`,
+		edited: "0 HEAD\n1 GEDC\n2 VERS 7.0\n" + stampLines() + `1 DEST ExampleDest
+1 DATE 1 JAN 2020
+2 TIME 12:00:00
+1 SUBM @U1@
 1 COPR Copyright Example
 1 NOTE A header note
 `,
@@ -156,8 +176,8 @@ func TestStampNewDatasets(t *testing.T) {
 }
 
 // TestStampEditingCommands holds that put and merge-people write the header
-// as read, and with --stamp differ from that output only in the header lines
-// the stamp replaces, saying so in the report.
+// as read, and with --stamp differ from that output only in the header's SOUR
+// structure, saying so in the report.
 func TestStampEditingCommands(t *testing.T) {
 	empty := writeTemp(t, "empty.ged", "")
 	tests := []struct {
@@ -194,8 +214,8 @@ func TestStampEditingCommands(t *testing.T) {
 					t.Errorf("--stamp: report = %q, want it to end %q", stdout, tt.text)
 				}
 				got, want := fileText(t, stamped), fileText(t, plain)
-				if headerText(got) != fx.want {
-					t.Errorf("--stamp: header =\n%s\nwant\n%s", headerText(got), fx.want)
+				if headerText(got) != fx.edited {
+					t.Errorf("--stamp: header =\n%s\nwant\n%s", headerText(got), fx.edited)
 				}
 				if got[len(headerText(got)):] != want[len(headerText(want)):] {
 					t.Errorf("--stamp: the records differ from those written without it:\n%s\nwant\n%s", got, want)

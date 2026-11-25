@@ -100,7 +100,7 @@ corporation lines too) before sharing the file.
 stdout and the report to stderr. An existing output file is replaced, and only
 once the whole file is written.
 
-` + stampHelp,
+` + stampHelp + "\n\n" + exportStampHelp,
 		Example: `  gedcom extract tree.ged @I1@ @I2@ -o couple.ged
   gedcom descendants --format json tree.ged I1 | jq -r '.[].xref' | gedcom extract tree.ged - -o branch.ged
   gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
@@ -162,7 +162,7 @@ once the whole file is written.
 			// line only where the record still reads as it.
 			branch.Layout = doc.Layout
 			if stamp {
-				if err := stampHeader(branch); err != nil {
+				if err := stampHeader(branch, exportStructures...); err != nil {
 					return err
 				}
 			}

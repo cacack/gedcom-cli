@@ -117,25 +117,28 @@ func writeOutput(cmd *cobra.Command, out string, doc *gedcom.Document) error {
 // tool; its VERS is version(), as 'gedcom --version' prints it.
 const stampSource = "gedcom-cli"
 
-// stampDropped are the header structures a stamp removes: the input's SOUR,
-// and the lines that describe the input's export rather than the file
-// written (its destination, date and file name).
-var stampDropped = []string{"SOUR", "DEST", "DATE", "FILE"}
+// exportStructures are the header structures that describe the input's
+// export rather than the file written (its destination, date and file name):
+// a command that makes a new dataset removes them when it stamps the header.
+var exportStructures = []string{"DEST", "DATE", "FILE"}
 
 // stampHelp is the help of every command that stamps the header.
 const stampHelp = `A stamped header names this tool as the system that wrote the file: its
 SOUR structure is replaced by "1 SOUR ` + stampSource + `", with VERS (the version
 'gedcom --version' prints) and NAME ` + stampSource + ` under it, where the SOUR was
-(at the end of the header if it had none), and its DEST, DATE and FILE lines,
-which describe the input's export rather than this file, are removed. Every
-other header line is kept as read. The input's SOUR is copied nowhere:
-'gedcom get <file> HEAD' prints it from the input, which is never written.
-The report says whether the header was stamped (JSON "stamped").`
+(at the end of the header if it had none). The input's SOUR is copied
+nowhere: 'gedcom get <file> HEAD' prints it from the input, which is never
+written. The report says whether the header was stamped (JSON "stamped").`
+
+// exportStampHelp is the help of a command that stamps a new dataset.
+const exportStampHelp = `Stamping a new dataset also removes the header's DEST, DATE and FILE lines,
+which describe the input's export rather than this file. Every other header
+line is kept as read.`
 
 // addStampFlag registers --stamp, the opt-in stamp of a command that edits a
 // file in place of its author.
 func addStampFlag(cmd *cobra.Command) {
-	cmd.Flags().Bool("stamp", false, "stamp the header: replace its SOUR with "+stampSource+" and its version, and remove DEST, DATE and FILE")
+	cmd.Flags().Bool("stamp", false, "stamp the header: replace its SOUR with "+stampSource+" and its version")
 }
 
 // addKeepHeaderFlag registers --keep-header, the opt-out of a command that
@@ -162,11 +165,11 @@ func stampedText(stamped bool) string {
 	return ""
 }
 
-// stampHeader replaces doc's header SOUR structure with this tool's, and
-// removes its DEST, DATE and FILE structures (stampHelp). Every other header
-// line is kept as it was. A header with no Tags is first given the lines the
+// stampHeader replaces doc's header SOUR structure with this tool's
+// (stampHelp), and removes the level-1 structures tagged remove. Every other
+// header line is kept as it was. A header with no Tags is first given the lines the
 // encoder writes for it, as 'gedcom get' prints them.
-func stampHeader(doc *gedcom.Document) error {
+func stampHeader(doc *gedcom.Document, remove ...string) error {
 	h := doc.Header
 	if h == nil {
 		h = &gedcom.Header{}
@@ -185,7 +188,7 @@ func stampHeader(doc *gedcom.Document) error {
 	}
 	removed := map[*gedcom.Tag]bool{}
 	for _, tag := range h.Tags {
-		if tag != nil && tag.Level == 1 && slices.Contains(stampDropped, tag.Tag) {
+		if tag != nil && tag.Level == 1 && (tag.Tag == "SOUR" || slices.Contains(remove, tag.Tag)) {
 			for _, sub := range h.Subtree(tag) {
 				removed[sub] = true
 			}

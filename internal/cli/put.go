@@ -55,8 +55,8 @@ A failure before the report exists (an unreadable file, a record in
 records.ged without an xref) prints no report, only the error on stderr.
 
 The header is written as read, since the file is edited in place of its
-author. --stamp stamps it instead: only the header's SOUR, DEST, DATE and
-FILE lines then differ. With an empty records.ged (/dev/null), put --stamp
+author. --stamp stamps it instead: only the header's SOUR structure then
+differs. With an empty records.ged (/dev/null), put --stamp
 stamps a file and changes nothing else.
 
 -o is required and may not name file or records.ged. An existing output file is

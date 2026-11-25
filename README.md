@@ -732,8 +732,9 @@ These hold for every command, so scripts and agents can rely on them:
   `--keep-header` writes the header as read, for a cut to be zipped back
   byte for byte. The other write commands edit a file in place of its author
   and write the header as read; `put` and the merge commands take `--stamp`
-  to stamp it, and `gedcom put --stamp file.ged /dev/null -o out.ged` stamps
-  the output of any of them. The input's `SOUR` is not copied anywhere:
+  to replace its `SOUR` structure the same way, leaving every other line,
+  and `gedcom put --stamp file.ged /dev/null -o out.ged` does that to the
+  output of any of them. The input's `SOUR` is not copied anywhere:
   `get <input> HEAD` prints it. The report says when the header was stamped
   (`stamped` in JSON; `header stamped` in a summary line, a `stamped HEAD`
   line in a merge report).

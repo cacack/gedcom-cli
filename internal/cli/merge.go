@@ -289,8 +289,8 @@ The report then lists each pair's lines in turn, each line starting with the
 pair's keep and drop; --format json gives an array of reports, one per pair.
 
 The header is written as read, since the file is edited in place of its
-author. --stamp stamps it instead: only the header's SOUR, DEST, DATE and
-FILE lines then differ. The report then ends with the line "stamped",
+author. --stamp stamps it instead: only the header's SOUR structure then
+differs. The report then ends with the line "stamped",
 tab, "HEAD" (JSON "stamped"; with several pairs, in each pair's report,
 as they share the file).
 
