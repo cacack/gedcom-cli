@@ -160,6 +160,9 @@ func TestRedactLiving(t *testing.T) {
 		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
 		{"name", []string{"name", living, "@I3@", "1", "--type", "birth", "-o", out}, ExitOK, []string{"@I3@ name 1", "before\tLiving\n  after\tLiving\n"}},
 		{"name json", []string{"name", "--format", "json", living, "@I1@", "1", "--type", "birth", "-o", out}, ExitOK, []string{`"2 TYPE birth"`, "Ann /Example/"}},
+		// retag reports counts; a finding the edit adds about Cleo is hidden.
+		{"retag", []string{"retag", living, "INDI.RESI", "PROP", "-o", out}, ExitOK, []string{"1 line INDI.RESI renamed PROP"}},
+		{"retag findings", []string{"retag", living, "INDI.RESI.ADDR", "HUSB", "-o", out}, ExitError, []string{"UNEXPECTED_SUBSTRUCTURE\tLiving"}},
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
@@ -283,6 +286,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"put-header", living, writeTemp(t, "head.ged", "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n")},
 		{"delete", "--force", living, "@I5@"},
 		{"name", living, "@I3@", "1", "--type", "birth"},
+		{"retag", living, "INDI.RESI", "PROP"},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
 		{"places", "apply", living, livingPlaces(t)},
 		{"merge-people", living, "@I3@", "@I5@"},

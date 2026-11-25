@@ -1,0 +1,30 @@
+0 HEAD
+1 GEDC
+2 VERS 7.0
+1 SOUR gedcom-cli-test
+0 @S1@ SOUR
+1 TITL Example register
+1 _APID 1,100::0
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 BIRT
+2 DATE 4 MAY 1900
+2 SOUR @S1@
+3 PAGE folio 3
+3 _APID 1,100::42
+1 _MILT
+2 DATE 1918
+2 PLAC Oldtown, Example County
+3 _MILT nested, not at the path
+2 SOUR @S1@
+3 _APID 1,100::43
+1 _MILT Sergeant
+2 TYPE Enlistment
+1 SEX F
+0 @I2@ INDI
+1 NAME Ben /Example/
+1 _MILT
+0 @F1@ FAM
+1 WIFE @I1@
+1 _MILT
+0 TRLR

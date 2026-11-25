@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -60,6 +60,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`put-header`](#put-header) | Replace the header, writing a new file |
 | [`delete`](#delete) | Remove records by xref, writing a new file |
 | [`name`](#name) | Edit one of a person's names: reorder it, set its TYPE, value or NICK |
+| [`retag`](#retag) | Give every line at one tag path a new tag, writing a new file |
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
@@ -563,6 +564,30 @@ is validated before it is written: an edit that adds a finding the input did
 not have, such as a `TYPE` GEDCOM 7.0 does not define, writes nothing and
 exits `1`.
 
+### retag
+
+Gives every line at one tag path a new tag: the bulk edit for a structure
+written with one tag that belongs under another, such as a vendor tag that
+has a standard form. The path is one `list <file> tags` prints, a record type
+and the tags down to the line, and only lines at exactly that path are
+renamed. Each keeps its value and the lines under it; `--add` puts a new line
+directly under each, and may be repeated:
+
+```sh
+gedcom list --vendor family.ged tags
+gedcom retag family.ged INDI._MILT EVEN --add "TYPE Military Service" -o out.ged
+```
+
+```text
+wrote out.ged: 34 lines INDI._MILT renamed EVEN, 34 lines added, 24 records changed
+```
+
+A structure that already has a line `--add` would add is reported with its
+xref and line, and nothing is written. The output is validated before it is
+written, as `name` does: an edit that adds a finding the input did not have,
+such as an `EXID` under a citation, where GEDCOM 7.0 permits none, writes
+nothing and exits `1`. A path no line is at writes the file byte-identical.
+
 ### convert
 
 Rewrites a file as GEDCOM 5.5.1 or 7.0 with gedcom-go's converter, to a new
@@ -758,7 +783,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `put-header`, `delete`, `name`, `media add`, `places apply`,
+  too: `put`, `put-header`, `delete`, `name`, `retag`, `media add`, `places apply`,
   the merge commands and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header
