@@ -155,6 +155,8 @@ func TestRedactLiving(t *testing.T) {
 		// put, delete and media add report xrefs only.
 		{"put", []string{"put", living, esme, "-o", out}, ExitOK, []string{"replaced\t@I5@"}},
 		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
+		{"name", []string{"name", living, "@I3@", "1", "--type", "birth", "-o", out}, ExitOK, []string{"@I3@ name 1", "before\tLiving\n  after\tLiving\n"}},
+		{"name json", []string{"name", "--format", "json", living, "@I1@", "1", "--type", "birth", "-o", out}, ExitOK, []string{`"2 TYPE birth"`, "Ann /Example/"}},
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
@@ -267,6 +269,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 	for _, args := range [][]string{
 		{"put", living, esme},
 		{"delete", "--force", living, "@I5@"},
+		{"name", living, "@I3@", "1", "--type", "birth"},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
 		{"merge-people", living, "@I3@", "@I5@"},
 		{"merge-families", living, "@F1@", "@F2@"},
