@@ -286,6 +286,30 @@ A file with nothing to report prints `family.ged: no findings`. The exit code
 is `1` whenever the file has an error-severity finding, with the report still
 on stdout and a one-line summary on stderr.
 
+`--style` adds gedcom-go's personal-name style checks: habits that are valid
+GEDCOM but usually worth tidying in an imported tree, such as a surname in
+capitals, text after the closing slash, a nickname in quotes or a vendor tag
+under `NAME`. They are style, not conformance: off by default, reported as
+warnings with a `NAME_*` code once per `NAME` line, and they never change the
+exit code. Give codes or `all`, and leave some out with `--skip-style`;
+`validate --help` lists the checks:
+
+```sh
+gedcom validate --style all family.ged
+```
+
+```text
+warning (2)
+  @I1@ line 11	NAME_ALL_CAPS	Name style: a given name or surname with a word of two or more letters all in capitals	validate
+  @I2@ line 14	NAME_TEXT_AFTER_SURNAME	Name style: text after the closing slash of the surname	validate
+```
+
+To run every check but one:
+
+```sh
+gedcom validate --style all --skip-style NAME_TEXT_AFTER_SURNAME family.ged
+```
+
 ### duplicates
 
 Reports people in one file who may be the same as people in another, for

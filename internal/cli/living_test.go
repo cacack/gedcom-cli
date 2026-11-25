@@ -146,6 +146,9 @@ func TestRedactLiving(t *testing.T) {
 		{"diff json", []string{"diff", "--format", "json", living, "testdata/living-changed.ged"}, ExitOK, []string{`"redacted": true`, `"redacted": false`, "9 OCT 1978"}},
 		{"diff living in old only", []string{"diff", living, "testdata/living-died.ged"}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", annDeathHunk}},
 		{"diff living in new only", []string{"diff", "testdata/living-died.ged", living}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", "  in INDI > DEAT\n  - line 17: 2 DATE 9 OCT 1978\n"}},
+		// Cleo's (@I3@) style finding is hidden; Ann's (@I1@) is not.
+		{"validate style", []string{"validate", "--style", "NAME_VENDOR_TAG", livingWithStyle(t)}, ExitError, []string{"@I1@ line 11\tNAME_VENDOR_TAG\tName style:", "@I3@ line 27\tNAME_VENDOR_TAG\tLiving\t"}},
+		{"validate style json", []string{"validate", "--format", "json", "--style", "NAME_VENDOR_TAG", livingWithStyle(t)}, ExitError, []string{"\"code\": \"NAME_VENDOR_TAG\",\n      \"message\": \"Living\""}},
 		{"validate json", []string{"validate", "--format", "json", "--min-severity", "info", living}, ExitError, []string{`"code": "INVALID_DATE"`, `"message": "Living"`}},
 		// TestCombineRedactLiving checks the file written.
 		{"combine", []string{"combine", "--strategy", "zip", living, living, "-o", filepath.Join(t.TempDir(), "out.ged")}, ExitOK, []string{"5 individuals"}},
@@ -281,6 +284,19 @@ func livingWithRepeats(t *testing.T) string {
 	s := strings.Replace(string(b), "2 PLAC Hiddenvale, Example County\n", "2 PLAC Hiddenvale, Example County\n1 BIRT\n2 DATE 15 Aug 1950\n2 NOTE Born at home\n", 1)
 	s = strings.Replace(s, "2 DATE 9 OCT 1979\n", "2 DATE 9 OCT 1979\n1 DEAT\n2 DATE 09 Oct 1979\n", 1)
 	return writeTemp(t, "living-repeats.ged", s)
+}
+
+// livingWithStyle is the living fixture with a vendor tag under Ann's (@I1@)
+// name and Cleo's (@I3@), for the NAME_VENDOR_TAG style check.
+func livingWithStyle(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(living)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(b), "1 NAME Ann /Example/\n", "1 NAME Ann /Example/\n2 _AKA Annie\n", 1)
+	s = strings.Replace(s, "1 NAME Cleo /Example/\n", "1 NAME Cleo /Example/\n2 _AKA Clee\n", 1)
+	return writeTemp(t, "living-style.ged", s)
 }
 
 // livingPlaces is a place table for the living fixture that renames Oldtown,
