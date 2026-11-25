@@ -1,0 +1,56 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Ada /Example/
+1 SEX F
+1 BIRT
+2 DATE 7 DEC 1977
+2 PLAC Exampletown, Example County
+1 RESI
+2 ADDR 1 First Street
+1 RESI
+2 ADDR 2 Second Street
+1 BIRT
+2 DATE 07 Dec 1977
+2 PLAC Exampletown, Example County
+2 SOUR @S1@
+3 PAGE p. 4
+2 NOTE Copied from the register
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Ben /Example/
+1 SEX M
+1 BIRT
+2 DATE 3 MAR 1975
+1 DEAT
+2 DATE 1 JAN 2020
+1 DEAT
+2 DATE 01 Jan 2020
+2 PLAC Exampleville
+1 DEAT
+2 DATE 1 JAN 2020
+2 SOUR @S1@
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Cal /Example/
+1 SEX M
+1 BIRT
+2 DATE 4 APR 1950
+1 BIRT
+2 DATE 5 APR 1950
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 12 JUN 2000
+2 PLAC Exampletown Chapel
+1 MARR
+2 DATE 12 JUN 2000
+2 SOUR @S1@
+0 @S1@ SOUR
+1 TITL Example register
+0 TRLR

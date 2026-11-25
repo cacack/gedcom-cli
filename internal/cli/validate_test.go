@@ -327,6 +327,10 @@ func TestValidateFailures(t *testing.T) {
 		{"missing argument", []string{"validate"}, ExitUsage},
 		{"too many arguments", []string{"validate", sample, records}, ExitUsage},
 		{"bad format", []string{"validate", "--format", "xml", sample}, ExitUsage},
+		{"unknown style check", []string{"validate", "--style", "NAME_LOUD", sample}, ExitUsage},
+		{"style codes are upper case", []string{"validate", "--style", "name_all_caps", sample}, ExitUsage},
+		{"unknown skipped style check", []string{"validate", "--style", "all", "--skip-style", "all", sample}, ExitUsage},
+		{"skip-style without style", []string{"validate", "--skip-style", "NAME_ALL_CAPS", sample}, ExitUsage},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -341,5 +345,145 @@ func TestValidateFailures(t *testing.T) {
 				t.Error("stderr is empty, want the reason")
 			}
 		})
+	}
+}
+
+const nameStyle = "testdata/name-style.ged"
+
+// nameStyleFindings are the findings --style all reports on the name-style
+// fixture: one person per check, each on that person's offending NAME line.
+var nameStyleFindings = []finding{
+	{Code: validator.CodeNameAllCaps, XRef: "@I1@", Line: 11},
+	{Code: validator.CodeNameTextAfterSurname, XRef: "@I2@", Line: 14},
+	{Code: validator.CodeNameSpacing, XRef: "@I3@", Line: 16},
+	{Code: validator.CodeNameQuotesOrParens, XRef: "@I4@", Line: 18},
+	{Code: validator.CodeNameUncertainMark, XRef: "@I5@", Line: 20},
+	{Code: validator.CodeNamePartPunctuation, XRef: "@I6@", Line: 22},
+	{Code: validator.CodeNameVendorTag, XRef: "@I7@", Line: 25},
+}
+
+// TestValidateStyleOffByDefault checks that the style checks run only when
+// asked for: without --style, a file full of style habits is clean.
+func TestValidateStyleOffByDefault(t *testing.T) {
+	code, stdout, stderr := run(t, "validate", "--min-severity", "info", nameStyle)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := nameStyle + ": no findings\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+}
+
+func TestValidateStyleJSON(t *testing.T) {
+	code, report, _, stderr := validateJSON(t, "--style", "all", nameStyle)
+	// Style findings alone never fail the file.
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if report.Counts != (severityCounts{Warning: len(nameStyleFindings)}) || len(report.Findings) != len(nameStyleFindings) {
+		t.Fatalf("counts = %+v, findings = %+v", report.Counts, report.Findings)
+	}
+	for i, w := range nameStyleFindings {
+		got := report.Findings[i]
+		if got.Source != sourceValidate || got.Severity != "warning" || got.Code != w.Code ||
+			got.XRef != w.XRef || got.Line != w.Line || !strings.HasPrefix(got.Message, "Name style: ") {
+			t.Errorf("finding %d = %+v, want %s on %s at line %d", i, got, w.Code, w.XRef, w.Line)
+		}
+	}
+}
+
+func TestValidateStyleText(t *testing.T) {
+	code, stdout, stderr := run(t, "validate", "--style", "all", nameStyle)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, fmt.Sprintf("warning (%d)\n", len(nameStyleFindings))) {
+		t.Errorf("stdout = %q", stdout)
+	}
+	want := "  @I1@ line 11\tNAME_ALL_CAPS\tName style: a given name or surname with a word of two or more letters all in capitals\tvalidate\n"
+	if !strings.Contains(stdout, want) {
+		t.Errorf("stdout lacks %q:\n%s", want, stdout)
+	}
+}
+
+// TestValidateStyleSelect checks that checks are chosen by code, comma-separated
+// or repeated, and that --skip-style leaves codes out.
+func TestValidateStyleSelect(t *testing.T) {
+	codes := func(report validateReport) []string {
+		var out []string
+		for _, f := range report.Findings {
+			out = append(out, f.Code)
+		}
+		return out
+	}
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"one", []string{"--style", "NAME_SPACING"}, []string{"NAME_SPACING"}},
+		{"comma-separated", []string{"--style", "NAME_VENDOR_TAG,NAME_ALL_CAPS"}, []string{"NAME_ALL_CAPS", "NAME_VENDOR_TAG"}},
+		{"repeated", []string{"--style", "NAME_VENDOR_TAG", "--style", "NAME_ALL_CAPS"}, []string{"NAME_ALL_CAPS", "NAME_VENDOR_TAG"}},
+		{"all but some", []string{"--style", "all", "--skip-style", "NAME_TEXT_AFTER_SURNAME,NAME_SPACING"},
+			[]string{"NAME_ALL_CAPS", "NAME_QUOTES_OR_PARENS", "NAME_UNCERTAIN_MARK", "NAME_PART_PUNCTUATION", "NAME_VENDOR_TAG"}},
+		{"skip what is chosen", []string{"--style", "NAME_SPACING", "--skip-style", "NAME_SPACING"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, report, _, stderr := validateJSON(t, append(tt.args, nameStyle)...)
+			if code != ExitOK || stderr != "" {
+				t.Fatalf("exit = %d, stderr = %q", code, stderr)
+			}
+			if got := codes(report); !slices.Equal(got, tt.want) {
+				t.Errorf("codes = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestValidateStyleClean checks that names written Given /Surname/ in mixed
+// case, with clean parts, draw no style findings.
+func TestValidateStyleClean(t *testing.T) {
+	for _, file := range []string{sample, records, living} {
+		code, stdout, stderr := run(t, "validate", "--style", "all", file)
+		plainCode, plain, plainErr := run(t, "validate", file)
+		if code != plainCode || stderr != plainErr {
+			t.Errorf("%s: exit = %d, stderr = %q; without --style %d, %q", file, code, stderr, plainCode, plainErr)
+		}
+		if stdout != plain {
+			t.Errorf("%s: --style all adds findings:\n%s\nwithout it:\n%s", file, stdout, plain)
+		}
+	}
+}
+
+// TestValidateStyleKeepsExitCode checks that style findings leave the exit
+// code and the error summary to the other findings.
+func TestValidateStyleKeepsExitCode(t *testing.T) {
+	b, err := os.ReadFile(problems)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := writeTemp(t, "style-errors.ged", strings.Replace(string(b), "0 TRLR\n", "0 @I99@ INDI\n1 NAME Zed /EXAMPLE/\n0 TRLR\n", 1))
+	_, _, plainErr := run(t, "validate", file)
+	code, stdout, stderr := run(t, "validate", "--style", "all", file)
+	if code != ExitError || stderr != plainErr {
+		t.Errorf("exit = %d, stderr = %q, want %d and %q", code, stderr, ExitError, plainErr)
+	}
+	if !strings.Contains(stdout, "\tNAME_ALL_CAPS\t") {
+		t.Errorf("stdout lacks the style finding:\n%s", stdout)
+	}
+}
+
+// TestValidateStyleHelp checks that the help lists every style check the
+// library has, with its code, and calls them style.
+func TestValidateStyleHelp(t *testing.T) {
+	_, stdout, _ := run(t, "validate", "--help")
+	if !strings.Contains(stdout, "style, not conformance") {
+		t.Errorf("help does not say the checks are style:\n%s", stdout)
+	}
+	for _, check := range validator.AllStyleChecks() {
+		if !strings.Contains(stdout, check.Code) || !strings.Contains(stdout, check.Description) {
+			t.Errorf("help lacks %s: %s", check.Code, check.Description)
+		}
 	}
 }

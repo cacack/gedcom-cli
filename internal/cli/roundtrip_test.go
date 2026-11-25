@@ -63,6 +63,10 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 	"retag": func(_ *testing.T, in, out string) []string {
 		return []string{"retag", in, "INDI._NONE", "EVEN", "-o", out}
 	},
+	// A file with no repeated events has nothing to fold.
+	"repeated-events": func(_ *testing.T, in, out string) []string {
+		return []string{"repeated-events", "--fold", in, "-o", out}
+	},
 	// put with an unedited copy of every record, as get prints them.
 	"put": func(t *testing.T, in, out string) []string {
 		fragment := filepath.Join(t.TempDir(), "records.ged")

@@ -48,6 +48,9 @@ type validateReport struct {
 	Findings    []finding      `json:"findings"`
 }
 
+// allStyleChecks is the --style value that turns on every style check.
+const allStyleChecks = "all"
+
 func newValidateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate <file>",
@@ -77,9 +80,19 @@ info.
 
 With --redact-living, the whole file is still validated, but a finding about
 a presumed-living person, or a line in their record, reads Living instead of
-its message.`,
+its message.
+
+--style turns on the library's personal-name style checks: habits in an
+individual's NAME that are valid GEDCOM but usually worth tidying. They are
+style, not conformance: off unless asked for, and their findings never change
+the exit code. Each is reported at most once per level-1 NAME line, on the
+individual and that line. Give codes, comma-separated or repeated, or "all";
+--skip-style leaves codes out of that. The checks:
+
+` + styleChecksHelp(),
 		Example: `  gedcom validate family.ged
   gedcom validate --min-severity error family.ged
+  gedcom validate --style all --skip-style NAME_TEXT_AFTER_SURNAME family.ged
   gedcom validate --format json family.ged | jq '.findings[] | select(.code == "ORPHANED_FAMS")'`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -98,7 +111,11 @@ its message.`,
 			if err != nil {
 				return err
 			}
-			all, err := findings(args[0], minSeverity == "info", living)
+			style, err := styleChecks(cmd)
+			if err != nil {
+				return err
+			}
+			all, err := findings(args[0], minSeverity == "info", style, living)
 			if err != nil {
 				return err
 			}
@@ -111,8 +128,11 @@ its message.`,
 			if err != nil {
 				return err
 			}
-			// The exit code is decided on every finding, not on the filtered ones.
-			if errs := countSeverities(all).Error; errs == 1 {
+			// The exit code is decided on every finding, not on the filtered
+			// ones, less the style findings, which never change it.
+			if errs := countSeverities(slices.DeleteFunc(slices.Clone(all), func(f finding) bool {
+				return f.Source == sourceValidate && slices.Contains(style, f.Code)
+			})).Error; errs == 1 {
 				return fmt.Errorf("1 error in %s", args[0])
 			} else if errs > 1 {
 				return fmt.Errorf("%d errors in %s", errs, args[0])
@@ -121,19 +141,70 @@ its message.`,
 		},
 	}
 	cmd.Flags().String("min-severity", "warning", "least severe findings to report: error, warning or info")
+	cmd.Flags().StringSlice("style", nil, `name style checks to run, by code, or "all"; comma-separated or repeated`)
+	cmd.Flags().StringSlice("skip-style", nil, "with --style, name style checks to leave out, by code; comma-separated or repeated")
 	return cmd
+}
+
+// styleChecksHelp lists the library's style checks for validate's help: one
+// line each with its code, severity and description.
+func styleChecksHelp() string {
+	var b strings.Builder
+	for _, check := range validator.AllStyleChecks() {
+		fmt.Fprintf(&b, "  %-24s %s: %s\n", check.Code, strings.ToLower(check.Severity.String()), check.Description)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// styleChecks is the codes --style and --skip-style select, in the library's
+// order, or nil when --style is not given. A code the library does not know
+// is a usage error.
+func styleChecks(cmd *cobra.Command) ([]string, error) {
+	style, err := cmd.Flags().GetStringSlice("style")
+	if err != nil {
+		return nil, err
+	}
+	skip, err := cmd.Flags().GetStringSlice("skip-style")
+	if err != nil {
+		return nil, err
+	}
+	if len(skip) > 0 && len(style) == 0 {
+		return nil, usageError{fmt.Errorf("--skip-style needs --style")}
+	}
+	var known []string
+	for _, check := range validator.AllStyleChecks() {
+		known = append(known, check.Code)
+	}
+	for _, code := range style {
+		if code != allStyleChecks && !slices.Contains(known, code) {
+			return nil, usageError{fmt.Errorf("unknown --style check %q: want %q or one of %s", code, allStyleChecks, strings.Join(known, ", "))}
+		}
+	}
+	for _, code := range skip {
+		if !slices.Contains(known, code) {
+			return nil, usageError{fmt.Errorf("unknown --skip-style check %q: want one of %s", code, strings.Join(known, ", "))}
+		}
+	}
+	var codes []string
+	for _, code := range known {
+		if (slices.Contains(style, allStyleChecks) || slices.Contains(style, code)) && !slices.Contains(skip, code) {
+			codes = append(codes, code)
+		}
+	}
+	return codes, nil
 }
 
 // findings decodes the file at path and validates it, returning the decode
 // diagnostics followed by the validation issues, each in the library's order.
 //
 // Duplicate detection is the validator's costliest check and reports at info
-// severity, so it runs only when withDuplicates is set.
+// severity, so it runs only when withDuplicates is set. style lists the name
+// style checks to run, by code.
 //
 // Validation sees the whole document. With --redact-living, the findings about
 // a record that redaction hides keep their code, xrefs and line but not their
 // message or context, which can quote a name, date or place.
-func findings(path string, withDuplicates bool, living livingOptions) ([]finding, error) {
+func findings(path string, withDuplicates bool, style []string, living livingOptions) ([]finding, error) {
 	res, err := decodeFileWithDiagnostics(path)
 	if err != nil {
 		return nil, err
@@ -143,6 +214,7 @@ func findings(path string, withDuplicates bool, living livingOptions) ([]finding
 	issues := gedcomgo.ValidateAllWithOptions(res.Document, &validator.ValidateOptions{
 		Strictness:             validator.StrictnessStrict,
 		SkipDuplicateDetection: !withDuplicates,
+		StyleChecks:            style,
 	})
 
 	all := decodeFindings(res.Diagnostics)

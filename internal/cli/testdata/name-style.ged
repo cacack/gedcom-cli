@@ -1,0 +1,33 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Adam /EXAMPLE/
+1 NAME Adam /Example/
+0 @I2@ INDI
+1 NAME Ben /Example/ Jr
+0 @I3@ INDI
+1 NAME Carl  /Example/
+0 @I4@ INDI
+1 NAME Dora "Dot" /Example/
+0 @I5@ INDI
+1 NAME Emil /Example or Sample/
+0 @I6@ INDI
+1 NAME Fay /Example/
+2 NSFX Jr.
+0 @I7@ INDI
+1 NAME Gus /Example/
+2 _AKA Gussie
+0 @I8@ INDI
+1 NAME H. J. /Example/
+2 GIVN H. J.
+2 SURN Example
+2 NSFX Jr
+2 NICK Hal
+0 TRLR

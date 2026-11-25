@@ -146,6 +146,9 @@ func TestRedactLiving(t *testing.T) {
 		{"diff json", []string{"diff", "--format", "json", living, "testdata/living-changed.ged"}, ExitOK, []string{`"redacted": true`, `"redacted": false`, "9 OCT 1978"}},
 		{"diff living in old only", []string{"diff", living, "testdata/living-died.ged"}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", annDeathHunk}},
 		{"diff living in new only", []string{"diff", "testdata/living-died.ged", living}, ExitOK, []string{"changed\t@I3@\tINDI\n  Living\n", "  in INDI > DEAT\n  - line 17: 2 DATE 9 OCT 1978\n"}},
+		// Cleo's (@I3@) style finding is hidden; Ann's (@I1@) is not.
+		{"validate style", []string{"validate", "--style", "NAME_VENDOR_TAG", livingWithStyle(t)}, ExitError, []string{"@I1@ line 11\tNAME_VENDOR_TAG\tName style:", "@I3@ line 27\tNAME_VENDOR_TAG\tLiving\t"}},
+		{"validate style json", []string{"validate", "--format", "json", "--style", "NAME_VENDOR_TAG", livingWithStyle(t)}, ExitError, []string{"\"code\": \"NAME_VENDOR_TAG\",\n      \"message\": \"Living\""}},
 		{"validate json", []string{"validate", "--format", "json", "--min-severity", "info", living}, ExitError, []string{`"code": "INVALID_DATE"`, `"message": "Living"`}},
 		// TestCombineRedactLiving checks the file written.
 		{"combine", []string{"combine", "--strategy", "zip", living, living, "-o", filepath.Join(t.TempDir(), "out.ged")}, ExitOK, []string{"5 individuals"}},
@@ -163,6 +166,9 @@ func TestRedactLiving(t *testing.T) {
 		// retag reports counts; a finding the edit adds about Cleo is hidden.
 		{"retag", []string{"retag", living, "INDI.RESI", "PROP", "-o", out}, ExitOK, []string{"1 line INDI.RESI renamed PROP"}},
 		{"retag findings", []string{"retag", living, "INDI.RESI.ADDR", "HUSB", "-o", out}, ExitError, []string{"UNEXPECTED_SUBSTRUCTURE\tLiving"}},
+		// Cleo's (@I3@) repeated birth is hidden; Ann's (@I1@) repeated death is not.
+		{"repeated-events", []string{"repeated-events", livingWithRepeats(t)}, ExitOK, []string{"repeated\t@I3@\tBIRT\tLiving\tLiving\n", "repeated\t@I1@\tDEAT\t1 DEAT | 2 DATE 9 OCT 1979\t"}},
+		{"repeated-events fold", []string{"repeated-events", "--fold", livingWithRepeats(t), "-o", out}, ExitOK, []string{"folded\t@I3@\tBIRT\tLiving\tLiving\n", "folded\t@I1@\tDEAT\t1 DEAT | 2 DATE 09 Oct 1979"}},
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
@@ -267,6 +273,32 @@ func livingWithSources(t *testing.T) string {
 	return writeTemp(t, "living-sources.ged", s)
 }
 
+// livingWithRepeats is the living fixture with Cleo's birth and Ann's death
+// each written a second time, for the repeated-events rows.
+func livingWithRepeats(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(living)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(b), "2 PLAC Hiddenvale, Example County\n", "2 PLAC Hiddenvale, Example County\n1 BIRT\n2 DATE 15 Aug 1950\n2 NOTE Born at home\n", 1)
+	s = strings.Replace(s, "2 DATE 9 OCT 1979\n", "2 DATE 9 OCT 1979\n1 DEAT\n2 DATE 09 Oct 1979\n", 1)
+	return writeTemp(t, "living-repeats.ged", s)
+}
+
+// livingWithStyle is the living fixture with a vendor tag under Ann's (@I1@)
+// name and Cleo's (@I3@), for the NAME_VENDOR_TAG style check.
+func livingWithStyle(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(living)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(b), "1 NAME Ann /Example/\n", "1 NAME Ann /Example/\n2 _AKA Annie\n", 1)
+	s = strings.Replace(s, "1 NAME Cleo /Example/\n", "1 NAME Cleo /Example/\n2 _AKA Clee\n", 1)
+	return writeTemp(t, "living-style.ged", s)
+}
+
 // livingPlaces is a place table for the living fixture that renames Oldtown,
 // Ann's and her family's place, and Hiddenvale, Cleo's.
 func livingPlaces(t *testing.T) string {
@@ -294,6 +326,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"merge-sources", sources, "@S1@", "@S2@"},
 		{"merge-repositories", sources, "@R1@", "@R2@"},
 		{"convert", living, "--to", "7.0"},
+		{"repeated-events", "--fold", livingWithRepeats(t)},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out.ged")
