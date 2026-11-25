@@ -46,6 +46,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
 	"extract": extractEveryone,
+	// A place table with no rows requests no change.
+	"places apply": func(t *testing.T, in, out string) []string {
+		table := filepath.Join(filepath.Dir(out), "places.tsv")
+		if err := os.WriteFile(table, []byte("place\tstandard\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"places", "apply", in, table, "-o", out}
+	},
 	// put with an unedited copy of every record, as get prints them.
 	"put": func(t *testing.T, in, out string) []string {
 		fragment := filepath.Join(t.TempDir(), "records.ged")
