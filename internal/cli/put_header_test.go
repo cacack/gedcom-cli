@@ -259,3 +259,35 @@ func TestPutHeaderNamedInHelp(t *testing.T) {
 		}
 	}
 }
+
+// A file in ANSEL is written in UTF-8, so get prints its header with CHAR
+// UTF-8; that header is taken back, and one saying ANSEL is refused.
+func TestPutHeaderNonUTF8File(t *testing.T) {
+	in := writeTemp(t, "ansel.ged", anselFixture)
+	head := getRecord(t, in, "HEAD")
+	if !strings.Contains(head, "1 CHAR UTF-8\n") {
+		t.Fatalf("get HEAD = %q, want CHAR UTF-8", head)
+	}
+	out := filepath.Join(t.TempDir(), "out.ged")
+	edited := strings.Replace(head, "1 SOUR gedcom-cli-test\n", "1 SOUR changed\n", 1)
+	code, stdout, stderr := run(t, "put-header", in, writeFragment(t, edited), "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "wrote " + out + ": header replaced\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	if got := getRecord(t, out, "HEAD"); got != edited {
+		t.Errorf("get HEAD = %q, want %q", got, edited)
+	}
+
+	ansel := strings.Replace(edited, "1 CHAR UTF-8\n", "1 CHAR ANSEL\n", 1)
+	out = filepath.Join(t.TempDir(), "out.ged")
+	code, _, stderr = run(t, "put-header", in, writeFragment(t, ansel), "-o", out)
+	if code != ExitError || !strings.Contains(stderr, `CHAR "ANSEL" differs`) {
+		t.Errorf("CHAR ANSEL: exit = %d, stderr = %q; want refused", code, stderr)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("output written despite the refusal (stat err %v)", err)
+	}
+}

@@ -40,9 +40,11 @@ writes the file byte-identical. A replaced header is written as its new
 lines, without the old header's indentation or blank lines.
 
 The header declares how the rest of the file is read. A header whose GEDC.VERS
-or CHAR differs from the file's, or adds or removes either line, is refused:
-nothing is written and the exit code is 1. Use 'gedcom convert' to change the
-version or the character set.
+or CHAR differs from the file's header as 'gedcom get' prints it, or adds or
+removes either line, is refused: nothing is written and the exit code is 1.
+Use 'gedcom convert' to change the version or the character set. The file is
+written in UTF-8, so for a file in ANSEL or ASCII 'gedcom get' prints CHAR
+UTF-8, and that is the CHAR to give.
 
 What the decoder could not read cleanly in header.ged is reported as
 'gedcom validate' reports it, with line numbers counted in header.ged. When
@@ -140,8 +142,12 @@ func putHeader(cmd *cobra.Command, in, header, out string) (*putHeaderReport, er
 	if old == nil {
 		old = &gedcom.Header{}
 	}
+	printed, err := printedHeader(old)
+	if err != nil {
+		return nil, err
+	}
 	for _, path := range [][]string{{"GEDC", "VERS"}, {"CHAR"}} {
-		was, is := headerValue(old, path), headerValue(given.Header, path)
+		was, is := headerValue(printed, path), headerValue(given.Header, path)
 		if was != is {
 			return nil, fmt.Errorf("%s: %s %s differs from the file's %s; use 'gedcom convert' to change it",
 				inputName(header), strings.Join(path, "."), is, was)
@@ -188,6 +194,24 @@ func decodeHeaderFragment(cmd *cobra.Command, path string) (*decoder.DecodeResul
 		return nil, fmt.Errorf("%s: %w", inputName(path), err)
 	}
 	return res, nil
+}
+
+// printedHeader is h as 'gedcom get <file> HEAD' prints it, read back. The
+// encoder writes UTF-8 and declares it in CHAR, so for a file in another
+// character set the header given back says UTF-8, as the file written will.
+func printedHeader(h *gedcom.Header) (*gedcom.Header, error) {
+	var lines bytes.Buffer
+	if err := encodeHeader(&lines, h); err != nil {
+		return nil, err
+	}
+	res, err := decoder.DecodeWithDiagnostics(&lines, decoder.DefaultOptions())
+	if err != nil {
+		return nil, err
+	}
+	if res.Document.Header == nil {
+		return &gedcom.Header{}, nil
+	}
+	return res.Document.Header, nil
 }
 
 // headerValue is the line at path in h, as "absent" or its value quoted.

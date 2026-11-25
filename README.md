@@ -456,7 +456,8 @@ wrote family-edited.ged: header replaced
 
 Every line outside the header is written exactly as it was read, and a header
 put back unedited leaves the output byte-identical. A header whose `GEDC.VERS`
-or `CHAR` differs from the file's is refused: that is `convert`'s job. What
+or `CHAR` differs from the file's, as `get` prints it, is refused: that is
+`convert`'s job. What
 the version requires of a header (`SOUR`, `SUBM`) is not checked: run
 `validate` on the output.
 
