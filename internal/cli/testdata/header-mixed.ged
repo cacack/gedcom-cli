@@ -1,0 +1,30 @@
+0 HEAD
+1 SOUR Example Family Site
+2 VERS 2019.1
+2 NAME Example Family Site Trees
+2 CORP Example Genealogy Inc.
+3 ADDR 1 Example Plaza
+4 CITY Sampletown
+2 _TREE Sample Family Tree
+3 RIN 12345
+1 DEST Other Example App
+1 DATE 2 JAN 2019
+2 TIME 10:20:30
+1 FILE /home/someone/old/sample.ged
+1 COPR Copyright 2019 Example
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 LANG English
+1 NOTE Written by Example Merger 3.0
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Ada /Example/
+  1 SEX F
+
+0 @I2@ INDI
+1 NAME Ben /Example/
+1 SEX M
+0 TRLR

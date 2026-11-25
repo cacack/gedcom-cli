@@ -58,6 +58,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		}
 		return []string{"put", in, fragment, "-o", out}
 	},
+	// put-header with an unedited copy of the header, as get prints it.
+	"put-header": func(t *testing.T, in, out string) []string {
+		header := filepath.Join(t.TempDir(), "head.ged")
+		if err := os.WriteFile(header, []byte(getRecord(t, in, "HEAD")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"put-header", in, header, "-o", out}
+	},
 }
 
 // changingWriteCommands maps each write command that cannot run with no change

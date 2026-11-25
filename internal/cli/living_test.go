@@ -103,6 +103,7 @@ func TestRedactLiving(t *testing.T) {
 	if err := os.WriteFile(esme, []byte("0 @I5@ INDI\n1 NAME Esme /Changed/\n1 SEX F\n1 FAMC @F2@\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	header := writeTemp(t, "head.ged", "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n")
 	tests := []struct {
 		name string
 		args []string
@@ -154,6 +155,8 @@ func TestRedactLiving(t *testing.T) {
 		{"duplicates", []string{"duplicates", living, living}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
 		// put, delete and media add report xrefs only.
 		{"put", []string{"put", living, esme, "-o", out}, ExitOK, []string{"replaced\t@I5@"}},
+		// put-header reports the header only, which is never redacted.
+		{"put-header", []string{"put-header", living, header, "-o", out}, ExitOK, []string{"header replaced"}},
 		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
 		{"name", []string{"name", living, "@I3@", "1", "--type", "birth", "-o", out}, ExitOK, []string{"@I3@ name 1", "before\tLiving\n  after\tLiving\n"}},
 		{"name json", []string{"name", "--format", "json", living, "@I1@", "1", "--type", "birth", "-o", out}, ExitOK, []string{`"2 TYPE birth"`, "Ann /Example/"}},
@@ -268,6 +271,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 	sources := livingWithSources(t)
 	for _, args := range [][]string{
 		{"put", living, esme},
+		{"put-header", living, writeTemp(t, "head.ged", "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n")},
 		{"delete", "--force", living, "@I5@"},
 		{"name", living, "@I3@", "1", "--type", "birth"},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
