@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -45,7 +45,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
 | [`get`](#get) | Print records by xref, or the header |
-| [`list`](#list) | List the records of one type, or the places, tag paths or one tag's values, one per line |
+| [`list`](#list) | List the records of one type, or the people's names, the places, tag paths or one tag's values, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
 | [`relatives`](#relatives) | Print people with their parents, siblings, spouses and children |
@@ -54,9 +54,12 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`diff`](#diff) | Compare two versions of a file record by record |
 | [`media check`](#media-check) | Report whether each `FILE` reference resolves under a media folder |
 | [`media add`](#media-add) | Link a media file from a record, writing a new file |
+| [`places apply`](#places-apply) | Rewrite `PLAC` values and set their coordinates from a place table, writing a new file |
 | [`extract`](#extract) | Write a branch of the tree to its own file |
 | [`put`](#put) | Replace records by xref, or add new ones, writing a new file |
+| [`put-header`](#put-header) | Replace the header, writing a new file |
 | [`delete`](#delete) | Remove records by xref, writing a new file |
+| [`name`](#name) | Edit one of a person's names: reorder it, set its TYPE, value or NICK |
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
@@ -100,11 +103,15 @@ gedcom get family.ged @I1@
 gedcom get family.ged I1 F1          # the @ delimiters are optional
 gedcom get family.ged HEAD           # the header
 gedcom get --format json family.ged @I1@
+gedcom list --format json family.ged fam | jq -r '.[].xref' | gedcom get family.ged -
 ```
 
+`-` reads more xrefs from stdin, as for [`extract`](#extract), printed where
+`-` stands among the arguments; the file is read once however many there are.
 With `--format json` each record is gedcom-go's own shape for it, plus a
 `Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`, and `HEAD` for the
-header). `put` takes records back, not the header.
+header). `put` takes records back; [`put-header`](#put-header) takes the
+header back.
 
 ### list
 
@@ -131,6 +138,27 @@ people by surname:
 ```sh
 gedcom list --format json family.ged indi | jq '.[] | select(.living | not)'
 gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
+```
+
+`list <file> names` lists each `NAME` line of each individual, one per row in
+file order, so a person's later names show too: xref, the name's position
+among the person's names, the value, the `GIVN`, `SURN`, `NSFX`, `NICK` and
+`TYPE` under it as written (empty when absent), the number of citations under
+it, and `same_as`, the position of the person's first earlier name equal to
+this one (0 if none). Two names are equal when their values match after
+ignoring case and removing spaces and punctuation, so `John /Smith/ Jr.`
+equals `john smith jr`. `--repeated` keeps only the names with a `same_as`,
+the repeats to fold:
+
+```sh
+gedcom list family.ged names
+gedcom list --repeated family.ged names
+```
+
+```text
+@I1@	1	John /Smith/ Jr.	John	Smith	Jr.			1	0
+@I1@	2	john smith, jr						2	1
+@I1@	3	Jack /Smith/				Jack	aka	0	0
 ```
 
 `list <file> plac` lists places instead of records: each distinct `PLAC`
@@ -236,7 +264,7 @@ gedcom validate --format json family.ged | jq .counts
 
 ```text
 error (2)
-  line 13	INVALID_LEVEL	invalid level number (context: "this line is not GEDCOM")	decode
+  @I1@ line 13	INVALID_LEVEL	invalid level number (context: "this line is not GEDCOM")	decode
   @I1@ line 18	ORPHANED_FAMS	FAMS reference to non-existent family @F9@ (related: @F9@)	validate
 warning (1)
   @I2@ line 19	MISSING_NAME	Individual record has no NAME	validate
@@ -246,6 +274,11 @@ A family link only one record claims, such as a `FAMS` to a family that does
 not name the person as `HUSB` or `WIFE`, is an `UNRECIPROCATED_<tag>` warning,
 where `<tag>` is the pointer that is there. It is reported on the individual,
 with the family as related xref.
+
+A finding's xref is the record it is about or, for a decode finding, the
+record its line is in, ready for `get` and `put`. A decode finding in the
+header or outside any record has none. In `--format json` it is the `xref`
+key, absent when there is none.
 
 A file with nothing to report prints `family.ged: no findings`. The exit code
 is `1` whenever the file has an error-severity finding, with the report still
@@ -370,6 +403,34 @@ gedcom media add family.ged --root media --batch links.tsv -o out.ged
 @I1@	@O2@	created	photos/ada.jpg
 ```
 
+### places apply
+
+Applies a place authority list to a file once you have settled what each
+place string in `list plac` should read. The table is tab-separated with a
+header row: `place` (matched byte for byte), `standard`, and `latitude` and
+`longitude` in GEDCOM form; other columns are ignored. Each `PLAC` whose
+value is a `place` gets the `standard` name and, when the row has
+coordinates, a `MAP` with `LATI` and `LONG`, or the table's coordinates in
+the `MAP` it already has. A malformed row is reported by line and nothing is
+written:
+
+```sh
+gedcom places apply family.ged places.tsv -o out.ged
+```
+
+```text
+wrote out.ged: 5 PLAC rewritten, 3 MAP added, 1 MAP updated, 3 records changed
+  no MAP permitted	line 48
+  no MAP permitted	line 51
+  unmatched	Nowhere, Example County
+```
+
+`MAP` is added only where the file's GEDCOM version permits one, as
+gedcom-go's grammar check reads it: not under a place of publication
+(`SOUR.PUBL.PLAC`), nor anywhere in a 5.5 file. Every other line is written as
+read, so running it again with the same table changes nothing. A `PLAC`
+continued on `CONC` or `CONT` lines is left as written.
+
 ### extract
 
 Writes a branch of the tree to its own file: the individuals given, every
@@ -387,15 +448,15 @@ gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
 ```text
 gedcom: warning: dropped pointer @F3@ HUSB @I7@ (restorable)
 gedcom: warning: dropped pointer @F3@ WIFE @I8@ (restorable)
-wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped
+wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped, header stamped (SOUR was ExampleSoft)
 ```
 
 A pointer to an individual or family left out (a family's `HUSB` for a
 parent not extracted) is removed, so the output has no dangling pointers;
 [`combine`](#combine) with `--strategy zip` puts the restorable ones back.
-The output carries the input's header and submitter, contact details
-included: read the help on what `--strip-submitter` does and does not remove
-before sharing a file.
+The output carries the input's header, [stamped](#conventions), and its
+submitter, contact details included: read the help on what
+`--strip-submitter` does and does not remove before sharing a file.
 
 To put the extracts of one master back together in the master's order, save
 each one's JSON report and give `combine` the reports of the files after the
@@ -408,8 +469,9 @@ gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged
 gedcom diff tree.ged tree2.ged
 ```
 
-Without the reports, a family split between files gets its `HUSB`, `WIFE`
-and `CHIL` lines back in one file's order. Either way the round trip
+Give `--keep-header` to both commands to get the master's header back too
+(`gedcom diff --include-header`). Without the reports, a family split between
+files gets its `HUSB`, `WIFE` and `CHIL` lines back in one file's order. Either way the round trip
 reproduces only the records reachable from the people extracted: a record
 nothing cites (a `SUBM`, `REPO` or `SOUR` with no pointer to it) is in no
 extract, and so not in the combined file.
@@ -432,7 +494,33 @@ wrote family-edited.ged: 1 replaced, 0 added, 0 unchanged
 ```
 
 Every line `put` was not asked to change is written exactly as it was read,
-so a record put back unedited leaves the output byte-identical. Pointers are
+so a record put back unedited leaves the output byte-identical. What the
+decoder could not read cleanly in the records file is reported as `validate`
+reports it, with its xref and its line number in that file; an error stops
+the write. Pointers are not checked: run `validate` on the output. The header
+is written as read; `--stamp` [stamps](#conventions) it.
+
+### put-header
+
+Replaces a file's header with the lines `get <file> HEAD` prints, edited: to
+drop lines another program left in it (`DEST`, `FILE`, `COPR`, `NOTE`), or
+to make its `SOUR`, `DATE` and `SUBM` describe the tree itself.
+
+```sh
+gedcom get family.ged HEAD > head.ged
+$EDITOR head.ged
+gedcom put-header family.ged head.ged -o family-edited.ged
+gedcom diff --include-header family.ged family-edited.ged
+```
+
+```text
+wrote family-edited.ged: header replaced
+```
+
+Every line outside the header is written exactly as it was read, and a header
+put back unedited leaves the output byte-identical. A header whose `GEDC.VERS`
+or `CHAR` differs from the file's, as `get` prints it, is refused: that is
+`convert`'s job. What the version requires of a header (`SOUR`, `SUBM`) is
 not checked: run `validate` on the output.
 
 ### delete
@@ -450,6 +538,30 @@ family-edited.ged not written: pointers left to @I2@
 references (1)
   @F1@	FAM.HUSB	@I2@
 ```
+
+### name
+
+Edits one of a person's names, addressed by its position among the person's
+`NAME` lines, counted from 1 in file order. It can move the name, with every
+line under it, to another position; set or clear its `TYPE` or `NICK`; and
+set its value, rewriting the `GIVN`, `SURN` and `NSFX` lines under it to the
+text before, between and after the slashes and removing a part left empty.
+Citations and notes under the name stay as they are:
+
+```sh
+gedcom name family.ged @I1@ 2 --move-to 1 --type birth -o fixed.ged
+```
+
+```text
+wrote fixed.ged: @I1@ name 2, now name 1
+  before	1 NAME Ada /Example/ | 2 SOUR @S1@
+  after	1 NAME Ada /Example/ | 2 TYPE birth | 2 SOUR @S1@
+```
+
+Which name is right is yours to say; the command infers nothing. The output
+is validated before it is written: an edit that adds a finding the input did
+not have, such as a `TYPE` GEDCOM 7.0 does not define, writes nothing and
+exits `1`.
 
 ### convert
 
@@ -549,6 +661,33 @@ as `dropped`, beside the kept one, and is not in the output. Other lines
 `conflict` when the kept record already held that tag with other lines.
 `--help` lists what each command carries. Run `validate` on the result.
 
+One run can merge many pairs, on all four merge commands. Name several drops
+after the keep, or give `--batch` a tab-separated file of pairs, one per
+line: keep, then drop. Blank lines and lines starting with `#` are skipped:
+
+```sh
+gedcom merge-sources family.ged @S1@ @S7@ @S9@ -o merged.ged
+gedcom merge-sources family.ged --batch pairs.tsv -o merged.ged
+```
+
+```text
+# pairs.tsv
+@S1@	@S7@
+@S2@	@S8@
+```
+
+The merges run in the order given, each on the result of the one before, so
+the output is the file the same pairs give merged one per run, each run on the
+last one's output. A record an earlier pair kept may be dropped by a later
+one. Every pair is checked first: one that names a missing record or one of
+another type, merges a record into itself, or names a record an earlier pair
+dropped is reported by argument or by line, and nothing is written. The
+report lists each pair's lines in turn, each starting with the pair's keep
+and drop; `--format json` gives an array of reports, one per pair. A single
+`<keep> <drop>` prints the report above, unlabeled. On every merge command
+`--stamp` [stamps](#conventions) the header, which is otherwise written as
+read.
+
 ### combine
 
 Joins files into one, in the order given, and writes it to a new file. No
@@ -564,14 +703,15 @@ gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
 ```
 
 ```text
-wrote both.ged: 412 records, 260 individuals, 98 families
+wrote both.ged: 412 records, 260 individuals, 98 families, header stamped (SOUR was ExampleSoft)
 cousin.ged	@F1@	@C_F1@
 cousin.ged	@F2@	@C_F2@
 cousin.ged	@I1@	@C_I1@
 ...
 ```
 
-Each renamed xref is a line (file, old, new).
+Each renamed xref is a line (file, old, new). The header is the first
+file's, [stamped](#conventions) unless `--keep-header` is given.
 
 ## Conventions
 
@@ -584,6 +724,24 @@ These hold for every command, so scripts and agents can rely on them:
   on stdout and its report on stderr; with `--format json` stderr then holds
   only that JSON report.
 - **`--format json`** gives machine-readable output; the default is text.
+- **The header names who wrote the file.** `extract` and `combine` make a new
+  dataset, so they stamp its header: the input's `SOUR` structure is replaced
+  by `1 SOUR gedcom-cli`, with `VERS` (what `gedcom --version` prints) and
+  `NAME gedcom-cli`, and its `DEST`, `DATE` and `FILE` lines, which describe
+  the input's export, are removed. Every other header line is kept.
+  `--keep-header` writes the header as read, for a cut to be zipped back
+  byte for byte. The other write commands edit a file in place of its author
+  and write the header as read; `put` and the merge commands take `--stamp`
+  to replace its `SOUR` structure the same way, leaving every other line,
+  and `gedcom put --stamp file.ged /dev/null -o out.ged` does that to the
+  output of any of them. In a 5.5 or 5.5.1 file the stamp keeps where the
+  data came from as `2 DATA` under the new `SOUR`: the input's own `SOUR.DATA`
+  with its lines, or else the input's `SOUR` value. GEDCOM 7.0 deprecates
+  `HEAD.SOUR.DATA`, so a 7.0 header gets none. The report says when the
+  header was stamped and what its `SOUR` was (`stamped` and `stamped_from` in
+  JSON; `header stamped (SOUR was ...)` in a summary line, a `stamped HEAD`
+  line in a merge report). [docs/spec-references.md](docs/spec-references.md)
+  quotes the specification text this rule follows.
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error), `validate` found errors or `combine` found conflicts, `2` the command
   line was wrong.
@@ -600,11 +758,11 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `delete`, `media add`, the merge commands and
-  `convert` edit or rewrite the whole tree and write it unredacted. Source,
-  media, repository and submitter records are not redacted, even when a
-  hidden record cites them, and neither is the header (`get HEAD`):
-  check their titles, file names and addresses yourself. Use it before pasting
+  too: `put`, `put-header`, `delete`, `name`, `media add`, `places apply`,
+  the merge commands and `convert` edit or rewrite the whole tree and write
+  it unredacted. Source, media, repository and submitter records are not
+  redacted, even when a hidden record cites them, and neither is the header
+  (`get HEAD`): check their titles, file names and addresses yourself. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or
   cremation, and no date of the person's, of a family they are a spouse in or

@@ -17,18 +17,23 @@ const headerArg = "HEAD"
 
 func newGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <file> <xref|HEAD>...",
+		Use:   "get <file> <xref|HEAD|->...",
 		Short: "Print records by xref: a person, family, source or any other record, or the header",
 		Long: `Print records by xref, in the order given, as the GEDCOM lines of each record.
 
 An xref may be given without its @ delimiters. Xrefs are case-sensitive. When
-a file defines an xref twice, the first definition is printed.
+a file defines an xref twice, the first definition is printed. "-" reads more
+xrefs from stdin, separated by spaces or newlines, as for 'gedcom extract', and
+prints those records where "-" stands among the arguments. Every word read is
+taken as an xref, so feed it the xref column only, such as the JSON output of
+'gedcom list' through jq -r '.[].xref'. However many xrefs are given, the file
+is read once.
 
 HEAD, exactly, prints the header's lines instead, and may be given among the
 xrefs; @HEAD@ is an xref. The header is printed as the file has it, even with
 --redact-living: like a submitter record, it is never redacted, so check any
-names in its lines yourself. 'gedcom put' does not take the header back: it
-replaces records only.
+names in its lines yourself. 'gedcom put-header' takes the header back;
+'gedcom put' replaces records only.
 
 --format json prints an array holding each record in gedcom-go's own shape.
 Its keys are the library's field names (XRef, Names, Husband), not the
@@ -39,6 +44,7 @@ is HEAD.`,
 		Example: `  gedcom get family.ged @I1@
   gedcom get family.ged I1 F1
   gedcom get family.ged HEAD @U1@
+  gedcom list --format json family.ged fam | jq -r '.[].xref' | gedcom get family.ged -
   gedcom get --format json family.ged @I1@`,
 		Args: minArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -46,11 +52,15 @@ is HEAD.`,
 			if err != nil {
 				return err
 			}
+			xrefs, err := readXRefs(cmd.InOrStdin(), args[1:])
+			if err != nil {
+				return err
+			}
 			doc, _, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			selected, err := selectRecords(doc, args[1:])
+			selected, err := selectRecords(doc, xrefs)
 			if err != nil {
 				return err
 			}
@@ -163,13 +173,7 @@ func writeRecordsText(w io.Writer, doc *gedcom.Document, selected []any) error {
 	for _, item := range selected {
 		switch item := item.(type) {
 		case *gedcom.Header:
-			// A stream encoder writes the header Encode writes. It is left
-			// without its trailer, so it is flushed rather than closed.
-			enc := encoder.NewStreamEncoder(w)
-			if err := enc.WriteHeader(item); err != nil {
-				return err
-			}
-			if err := enc.Flush(); err != nil {
+			if err := encodeHeader(w, item); err != nil {
 				return err
 			}
 		case *gedcom.Record:
@@ -179,4 +183,15 @@ func writeRecordsText(w io.Writer, doc *gedcom.Document, selected []any) error {
 		}
 	}
 	return nil
+}
+
+// encodeHeader writes the header's lines as Encode would write them.
+func encodeHeader(w io.Writer, h *gedcom.Header) error {
+	// A stream encoder writes the header Encode writes. It is left without
+	// its trailer, so it is flushed rather than closed.
+	enc := encoder.NewStreamEncoder(w)
+	if err := enc.WriteHeader(h); err != nil {
+		return err
+	}
+	return enc.Flush()
 }

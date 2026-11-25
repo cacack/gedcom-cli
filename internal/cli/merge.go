@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -87,6 +88,11 @@ type mergeReport struct {
 	Deduplicated []mergedPart `json:"deduplicated"`
 	Repointed    []mergeRef   `json:"repointed"`
 	Collapsed    []mergeRef   `json:"collapsed"`
+	// Stamped says the file written, which every pair's report shares, had
+	// its header stamped.
+	Stamped bool `json:"stamped"`
+	// StampedFrom is the value of the SOUR the stamp replaced.
+	StampedFrom string `json:"stamped_from,omitempty"`
 	// Candidates is set by merge-people only.
 	Candidates *[]familyCandidate `json:"candidates,omitempty"`
 	// Dropped is set by merge-sources and merge-repositories only.
@@ -95,7 +101,7 @@ type mergeReport struct {
 
 func newMergePeopleCmd() *cobra.Command {
 	return newMergeCmd(mergePeople, &cobra.Command{
-		Use:   "merge-people <file> <keep> <drop> -o <out>",
+		Use:   "merge-people <file> (<keep> <drop>... | --batch <tsv>) -o <out>",
 		Short: "Fold one individual into another, writing a new file",
 		Long: `Merge the individual <drop> into the individual <keep>, and write the result
 to --output. The input file is never changed. Deciding that the two are one
@@ -151,6 +157,7 @@ redacted.
 Run 'gedcom validate' on the output to check the result.`,
 		Example: `  gedcom merge-people family.ged @I1@ @I7@ -o merged.ged
   gedcom merge-people --fold-events family.ged @I1@ @I7@ -o merged.ged
+  gedcom merge-people family.ged @I1@ @I7@ @I9@ -o merged.ged
   gedcom merge-people --format json family.ged I1 I7 -o merged.ged | jq '.moved[] | select(.conflict)'
   gedcom merge-families merged.ged @F1@ @F4@ -o merged2.ged`,
 	})
@@ -158,7 +165,7 @@ Run 'gedcom validate' on the output to check the result.`,
 
 func newMergeFamiliesCmd() *cobra.Command {
 	return newMergeCmd(mergeFamilies, &cobra.Command{
-		Use:   "merge-families <file> <keep> <drop> -o <out>",
+		Use:   "merge-families <file> (<keep> <drop>... | --batch <tsv>) -o <out>",
 		Short: "Fold one family into another, writing a new file",
 		Long: `Merge the family <drop> into the family <keep>, and write the result to
 --output. The input file is never changed. Deciding that the two are one
@@ -180,13 +187,14 @@ deduplicated, repointed and collapsed lines. A HUSB or WIFE that differs from
 keep's is moved, and reported as a conflict. Run 'gedcom validate' on the
 output to check the result.`,
 		Example: `  gedcom merge-families family.ged @F1@ @F4@ -o merged.ged
+  gedcom merge-families family.ged --batch pairs.tsv -o merged.ged
   gedcom merge-families --format json family.ged F1 F4 -o merged.ged`,
 	})
 }
 
 func newMergeSourcesCmd() *cobra.Command {
 	return newMergeCmd(mergeSources, &cobra.Command{
-		Use:   "merge-sources <file> <keep> <drop> -o <out>",
+		Use:   "merge-sources <file> (<keep> <drop>... | --batch <tsv>) -o <out>",
 		Short: "Fold one source into another, writing a new file",
 		Long: `Merge the source record <drop> into the source record <keep>, and write the
 result to --output. The input file is never changed. Deciding that the two
@@ -222,6 +230,8 @@ The report lists, one per line and tab-separated:
 A substructure's lines are joined with " | ". Run 'gedcom validate' on the
 output to check the result.`,
 		Example: `  gedcom merge-sources family.ged @S1@ @S7@ -o merged.ged
+  gedcom merge-sources family.ged @S1@ @S7@ @S9@ -o merged.ged
+  gedcom merge-sources family.ged --batch pairs.tsv -o merged.ged
   gedcom merge-sources --format json family.ged S1 S7 -o merged.ged | jq '.dropped'
   gedcom merge-repositories merged.ged @R1@ @R2@ -o merged2.ged`,
 	})
@@ -229,7 +239,7 @@ output to check the result.`,
 
 func newMergeRepositoriesCmd() *cobra.Command {
 	return newMergeCmd(mergeRepositories, &cobra.Command{
-		Use:   "merge-repositories <file> <keep> <drop> -o <out>",
+		Use:   "merge-repositories <file> (<keep> <drop>... | --batch <tsv>) -o <out>",
 		Short: "Fold one repository into another, writing a new file",
 		Long: `Merge the repository record <drop> into the repository record <keep>, and
 write the result to --output. The input file is never changed. Deciding that
@@ -251,14 +261,154 @@ The report is merge-sources', with one more kind of line:
 
 Run 'gedcom validate' on the output to check the result.`,
 		Example: `  gedcom merge-repositories family.ged @R1@ @R2@ -o merged.ged
+  gedcom merge-repositories family.ged @R1@ @R2@ @R5@ -o merged.ged
+  gedcom merge-repositories family.ged --batch pairs.tsv -o merged.ged
   gedcom merge-repositories --format json family.ged R1 R2 -o merged.ged`,
 	})
+}
+
+// mergeManyHelp is the merge commands' help on merging several pairs in one
+// run.
+const mergeManyHelp = `
+
+Several merges in one run:
+
+  <keep> <drop>...  merge each drop into keep, in the order given
+  --batch <tsv>     merge the pairs of a tab-separated file, one per line:
+                    keep, then drop; blank lines and lines starting with #
+                    are skipped
+
+The merges run in the order given, each on the result of the one before, so
+the output is the file that merging the pairs one per run, each run on the
+last one's output, would give. A record an earlier pair kept may be dropped
+by a later one, and goes on to the new keep with what was merged into it.
+Every pair is checked before anything is
+merged: a pair that names no such record or a record of another type, merges
+a record into itself, or names a record an earlier pair dropped (a drop named
+twice) is reported, by argument or by line, and nothing is written.
+
+The report then lists each pair's lines in turn, each line starting with the
+pair's keep and drop; --format json gives an array of reports, one per pair.
+
+The header is written as read, since the file is edited in place of its
+author. --stamp stamps it instead: only the header's SOUR structure then
+differs. The report then ends with the line "stamped",
+tab, "HEAD" (JSON "stamped"; with several pairs, in each pair's report,
+as they share the file).
+
+` + stampHelp
+
+// mergePair is one merge of a run: drop into keep, as typed, with where the
+// pair came from for an error.
+type mergePair struct {
+	label      string
+	keep, drop string
+}
+
+// mergePairs is the pairs the command line names: one per drop after keep,
+// or one per row of --batch.
+func mergePairs(cmd *cobra.Command, args []string) ([]mergePair, error) {
+	batch, _ := cmd.Flags().GetString("batch")
+	if batch == "" {
+		pairs := make([]mergePair, 0, len(args)-2)
+		for i, drop := range args[2:] {
+			pairs = append(pairs, mergePair{label: fmt.Sprintf("argument %d (%s)", i+3, drop), keep: args[1], drop: drop})
+		}
+		return pairs, nil
+	}
+	rows, err := readBatch(batch, 2, 2, "keep and drop")
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, usageError{fmt.Errorf("%s has no pairs to merge", batch)}
+	}
+	pairs := make([]mergePair, 0, len(rows))
+	for _, row := range rows {
+		pairs = append(pairs, mergePair{label: fmt.Sprintf("%s line %d", batch, row.line), keep: row.fields[0], drop: row.fields[1]})
+	}
+	return pairs, nil
+}
+
+// checkPairs checks every pair against doc, as it will be once the pairs
+// before it are merged, and returns each pair's keep and drop xrefs. With
+// labeled, each error names its pair. The error is a usageError when every
+// failure is one.
+func checkPairs(doc *gedcom.Document, kind mergeKind, pairs []mergePair, labeled bool) ([][2]string, error) {
+	xrefs := make([][2]string, len(pairs))
+	droppedBy := map[string]mergePair{} // a dropped xref to the pair that dropped it
+	var errs []string
+	usage := true
+	fail := func(pair mergePair, err error) {
+		if _, ok := err.(usageError); !ok {
+			usage = false
+		}
+		msg := err.Error()
+		if labeled {
+			msg = pair.label + ": " + msg
+		}
+		errs = append(errs, msg)
+	}
+	for i, pair := range pairs {
+		records, err := findRecords(doc, []string{pair.keep, pair.drop})
+		if err != nil {
+			fail(pair, err)
+			continue
+		}
+		keep, drop := records[0], records[1]
+		if keep == drop {
+			fail(pair, usageError{fmt.Errorf("keep and drop are both %s; name two records", keep.XRef)})
+			continue
+		}
+		if by, ok := droppedBy[keep.XRef]; ok {
+			fail(pair, usageError{fmt.Errorf("%s was merged into %s by %s", keep.XRef, by.keep, by.label)})
+			continue
+		}
+		if by, ok := droppedBy[drop.XRef]; ok {
+			fail(pair, usageError{fmt.Errorf("%s was merged into %s by %s", drop.XRef, by.keep, by.label)})
+			continue
+		}
+		if err := checkMergeType(kind, records); err != nil {
+			fail(pair, err)
+			continue
+		}
+		droppedBy[drop.XRef] = mergePair{label: pair.label, keep: keep.XRef}
+		xrefs[i] = [2]string{keep.XRef, drop.XRef}
+	}
+	if len(errs) == 0 {
+		return xrefs, nil
+	}
+	err := errors.New(strings.Join(errs, "\n"))
+	if usage {
+		return nil, usageError{err}
+	}
+	return nil, err
+}
+
+// checkMergeType returns an error for the first of records that is not one of
+// kind's.
+func checkMergeType(kind mergeKind, records []*gedcom.Record) error {
+	for _, record := range records {
+		if record.Type != kind.recordType {
+			return fmt.Errorf("%s is a %s record; want %s", record.XRef, record.Type, kind.noun)
+		}
+	}
+	return nil
 }
 
 // newMergeCmd completes cmd, which holds the command's help, as a merge of
 // kind's records.
 func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
-	cmd.Args = exactArgs(3)
+	cmd.Long += mergeManyHelp
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if batch, _ := cmd.Flags().GetString("batch"); batch != "" {
+			if len(args) != 1 {
+				return usageError{errors.New("--batch takes the pairs from its file: give <file> alone, without <keep> or <drop>")}
+			}
+			return nil
+		}
+		return minArgs(3)(cmd, args)
+	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		format, err := outputFormat(cmd)
 		if err != nil {
@@ -272,51 +422,85 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		pairs, err := mergePairs(cmd, args)
+		if err != nil {
+			return err
+		}
+		// One <keep> <drop> prints one report, as it always has; several
+		// pairs, or any --batch, print one per pair, labeled.
+		batch, _ := cmd.Flags().GetString("batch")
+		many := batch != "" || len(pairs) > 1
 
 		res, err := decodeForWrite(args[0])
 		if err != nil {
 			return err
 		}
 		doc := res.Document
-		records, err := findRecords(doc, args[1:])
+		xrefs, err := checkPairs(doc, kind, pairs, many)
 		if err != nil {
 			return err
-		}
-		keep, drop := records[0], records[1]
-		if keep == drop {
-			return usageError{fmt.Errorf("keep and drop are both %s; name two records", keep.XRef)}
-		}
-		for _, record := range records {
-			if record.Type != kind.recordType {
-				return fmt.Errorf("%s is a %s record; want %s", record.XRef, record.Type, kind.noun)
-			}
 		}
 
 		fold := false
 		if kind.foldEvents {
 			fold, _ = cmd.Flags().GetBool("fold-events")
 		}
-		merged, libReport, err := kind.merge(doc, keep.XRef, drop.XRef, merge.RecordMergeOptions{FoldEvents: fold})
+		reports := make([]*mergeReport, 0, len(xrefs))
+		for i, pair := range xrefs {
+			keep, drop := doc.GetRecord(pair[0]), doc.GetRecord(pair[1])
+			merged, libReport, err := kind.merge(doc, keep.XRef, drop.XRef, merge.RecordMergeOptions{FoldEvents: fold})
+			if err != nil {
+				if many {
+					return fmt.Errorf("%s: %w", pairs[i].label, err)
+				}
+				return err
+			}
+			hidden := hiddenRecords(doc, presumedLiving(doc, opts.cfg))
+			report := newMergeReport(doc, kind, keep, libReport, opts.redact && (hidden[keep] || hidden[drop]))
+			if kind.recordType == gedcom.RecordTypeIndividual {
+				candidates := familyCandidates(merged, keep.XRef)
+				report.Candidates = &candidates
+			}
+			reports = append(reports, report)
+			doc = merged
+		}
+
+		stamp, err := stampRequested(cmd)
 		if err != nil {
 			return err
 		}
-		hidden := hiddenRecords(doc, presumedLiving(doc, opts.cfg))
-		report := newMergeReport(doc, kind, keep, libReport, opts.redact && (hidden[keep] || hidden[drop]))
-		if kind.recordType == gedcom.RecordTypeIndividual {
-			candidates := familyCandidates(merged, keep.XRef)
-			report.Candidates = &candidates
+		if stamp {
+			from, err := stampHeader(doc)
+			if err != nil {
+				return err
+			}
+			for _, report := range reports {
+				report.Stamped, report.StampedFrom = true, from
+			}
 		}
-
-		if err := writeOutput(cmd, out, merged); err != nil {
+		if err := writeOutput(cmd, out, doc); err != nil {
 			return err
 		}
 		w := reportWriter(cmd, out)
-		if format == formatJSON {
-			return writeJSON(w, report)
+		if !many {
+			if format == formatJSON {
+				return writeJSON(w, reports[0])
+			}
+			return writeMergeText(w, reports[0], "")
 		}
-		return writeMergeText(w, report)
+		if format == formatJSON {
+			return writeJSON(w, reports)
+		}
+		for _, report := range reports {
+			if err := writeMergeText(w, report, report.Keep+"\t"+report.Drop+"\t"); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	addOutputFlag(cmd)
+	addStampFlag(cmd)
+	cmd.Flags().String("batch", "", "tab-separated file of pairs to merge, one per line: keep, drop")
 	if kind.foldEvents {
 		cmd.Flags().Bool("fold-events", false, "fold an event of drop into keep's record of the same event, instead of adding it beside it")
 	}
@@ -439,7 +623,8 @@ func familyCandidates(doc *gedcom.Document, xref string) []familyCandidate {
 	return candidates
 }
 
-func writeMergeText(w io.Writer, r *mergeReport) error {
+// writeMergeText writes r's lines, each starting with prefix.
+func writeMergeText(w io.Writer, r *mergeReport, prefix string) error {
 	var lines []string
 	for _, p := range r.Moved {
 		kind := "moved"
@@ -470,8 +655,11 @@ func writeMergeText(w io.Writer, r *mergeReport) error {
 			lines = append(lines, "candidate\t"+c.Partner+"\t"+strings.Join(c.Families, "\t"))
 		}
 	}
+	if r.Stamped {
+		lines = append(lines, strings.TrimSuffix("stamped\tHEAD\t"+r.StampedFrom, "\t"))
+	}
 	for _, line := range lines {
-		if _, err := fmt.Fprintln(w, line); err != nil {
+		if _, err := fmt.Fprintln(w, prefix+line); err != nil {
 			return err
 		}
 	}

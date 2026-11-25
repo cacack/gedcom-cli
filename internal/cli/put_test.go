@@ -131,7 +131,7 @@ func TestPutFragmentErrorsWriteNothing(t *testing.T) {
 	}
 	want := out + " not written\n" +
 		"error (1)\n" +
-		"  line 2\tINVALID_LEVEL\tinvalid level number (context: \"not a GEDCOM line\")\tdecode\n"
+		"  @I1@ line 2\tINVALID_LEVEL\tinvalid level number (context: \"not a GEDCOM line\")\tdecode\n"
 	if stdout != want {
 		t.Errorf("stdout = %q, want %q", stdout, want)
 	}
@@ -155,8 +155,8 @@ func TestPutFragmentErrorsJSON(t *testing.T) {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
 	}
 	if got.Written || got.Counts.Error != 1 || len(got.Findings) != 1 ||
-		got.Findings[0].Code != "DUPLICATE_XREF" || got.Findings[0].Source != sourceDecode || got.Findings[0].Line != 3 {
-		t.Errorf("report = %+v, want one DUPLICATE_XREF decode error at line 3", got)
+		got.Findings[0].Code != "DUPLICATE_XREF" || got.Findings[0].Source != sourceDecode || got.Findings[0].Line != 3 || got.Findings[0].XRef != "@I9@" {
+		t.Errorf("report = %+v, want one DUPLICATE_XREF decode error in @I9@ at line 3", got)
 	}
 }
 

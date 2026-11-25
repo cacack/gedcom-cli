@@ -103,6 +103,7 @@ func TestRedactLiving(t *testing.T) {
 	if err := os.WriteFile(esme, []byte("0 @I5@ INDI\n1 NAME Esme /Changed/\n1 SEX F\n1 FAMC @F2@\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	header := writeTemp(t, "head.ged", "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n")
 	tests := []struct {
 		name string
 		args []string
@@ -115,6 +116,9 @@ func TestRedactLiving(t *testing.T) {
 		{"list indi", []string{"list", living, "indi"}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
 		{"list fam", []string{"list", living, "fam"}, ExitOK, []string{"@F2@\t@I4@\t@I3@\t\t1", "1 JUN 1925"}},
 		{"list json", []string{"list", "--format", "json", living, "indi"}, ExitOK, []string{`"name": "Living"`, "Ann /Example/"}},
+		{"list names", []string{"list", living, "names"}, ExitOK, []string{"@I3@\t1\tLiving\t\t\t\t\t\t0\t0\n", "@I1@\t1\tAnn /Example/\t"}},
+		{"list names json", []string{"list", "--format", "json", living, "names"}, ExitOK, []string{`"value": "Living"`, "Ann /Example/"}},
+		{"list names repeated", []string{"list", "--repeated", living, "names"}, ExitOK, nil},
 		{"list plac", []string{"list", living, "plac"}, ExitOK, []string{"2\tOldtown, Example County\n"}},
 		{"list plac json", []string{"list", "--format", "json", living, "plac"}, ExitOK, []string{`"place": "Oldtown, Example County"`, `"count": 2`}},
 		// Only Ann's and Bob's lines, and the family of theirs, are counted.
@@ -127,6 +131,9 @@ func TestRedactLiving(t *testing.T) {
 		{"validate", []string{"validate", "--min-severity", "info", living}, ExitError, []string{"INVALID_LEVEL\tLiving", "@I5@ line 46\tINVALID_DATE\tLiving"}},
 		{"merge-people", []string{"merge-people", living, "@I3@", "@I5@", "-o", out}, ExitOK, []string{"conflict\tBIRT\tLiving", "repointed\t@F2@\tFAM.CHIL"}},
 		{"merge-people json", []string{"merge-people", "--format", "json", living, "@I1@", "@I3@", "-o", out}, ExitOK, []string{"\"lines\": [\n        \"Living\""}},
+		// Each pair is redacted by its own records: Bob's lines show, Cleo's
+		// do not.
+		{"merge-people several", []string{"merge-people", living, "@I1@", "@I2@", "@I3@", "-o", out}, ExitOK, []string{"@I1@\t@I2@\tconflict\tNAME\t1 NAME Bob /Example/", "@I1@\t@I3@\tconflict\tBIRT\tLiving"}},
 		{"merge-families", []string{"merge-families", living, "@F1@", "@F2@", "-o", out}, ExitOK, []string{"conflict\tMARR\tLiving", "repointed\t@I5@\tINDI.FAMC"}},
 		// Source and repository records are not redacted; what the report
 		// says of the living people citing them is their xrefs.
@@ -148,10 +155,16 @@ func TestRedactLiving(t *testing.T) {
 		{"duplicates", []string{"duplicates", living, living}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
 		// put, delete and media add report xrefs only.
 		{"put", []string{"put", living, esme, "-o", out}, ExitOK, []string{"replaced\t@I5@"}},
+		// put-header reports the header only, which is never redacted.
+		{"put-header", []string{"put-header", living, header, "-o", out}, ExitOK, []string{"header replaced"}},
 		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
+		{"name", []string{"name", living, "@I3@", "1", "--type", "birth", "-o", out}, ExitOK, []string{"@I3@ name 1", "before\tLiving\n  after\tLiving\n"}},
+		{"name json", []string{"name", "--format", "json", living, "@I1@", "1", "--type", "birth", "-o", out}, ExitOK, []string{`"2 TYPE birth"`, "Ann /Example/"}},
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
+		// places apply reports counts and the table's unmatched places only.
+		{"places apply", []string{"places", "apply", living, livingPlaces(t), "-o", out}, ExitOK, []string{"3 PLAC rewritten", "3 records changed"}},
 		// The decode finding is on Dirk's line, the note is Cleo's and the
 		// validation issue is about Esme's birth date.
 		{"convert", []string{"convert", living, "--to", "7.0", "-o", out}, ExitOK, []string{"5.5.1 -> 7.0", "INVALID_LEVEL\tline 40\tLiving", "Note @N1@\tLiving\tLiving\tLiving", "validation (1)\n  Living\n", "VERSION_UPGRADE"}},
@@ -251,6 +264,13 @@ func livingWithSources(t *testing.T) string {
 	return writeTemp(t, "living-sources.ged", s)
 }
 
+// livingPlaces is a place table for the living fixture that renames Oldtown,
+// Ann's and her family's place, and Hiddenvale, Cleo's.
+func livingPlaces(t *testing.T) string {
+	t.Helper()
+	return writeTemp(t, "places.tsv", "place\tstandard\nOldtown, Example County\tOldtown\nHiddenvale, Example County\tHiddenvale\n")
+}
+
 // TestRedactLivingWholeFiles checks the README's rule for the files written
 // with --redact-living: extract and combine redact theirs (TestRedactLiving
 // and TestCombineRedactLiving), and every other write command writes the
@@ -260,8 +280,11 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 	sources := livingWithSources(t)
 	for _, args := range [][]string{
 		{"put", living, esme},
+		{"put-header", living, writeTemp(t, "head.ged", "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n")},
 		{"delete", "--force", living, "@I5@"},
+		{"name", living, "@I3@", "1", "--type", "birth"},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
+		{"places", "apply", living, livingPlaces(t)},
 		{"merge-people", living, "@I3@", "@I5@"},
 		{"merge-families", living, "@F1@", "@F2@"},
 		{"merge-sources", sources, "@S1@", "@S2@"},

@@ -1,0 +1,21 @@
+0 HEAD
+1 GEDC
+2 VERS 7.0
+1 SOUR gedcom-cli-test
+0 @S1@ SOUR
+1 TITL Example register
+0 @I1@ INDI
+1 NAME Ada /Example/
+2 GIVN Ada
+2 SURN Example
+2 SOUR @S1@
+3 PAGE folio 3
+2 NOTE Name as baptized
+1 NAME Adaline /Sample/ Jr
+2 TYPE AKA
+2 NICK Addie
+2 GIVN Adaline
+2 SURN Sample
+2 NSFX Jr
+1 SEX F
+0 TRLR

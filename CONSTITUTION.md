@@ -21,6 +21,7 @@ When in doubt, prefer:
 4. **The library's logic over our own** — commands wrap gedcom-go. A missing capability or a bug becomes an upstream issue, not a local workaround.
 5. **The input is never touched** — writes go to a new file, and nothing leaves the machine: no network calls, no telemetry. The files describe living people.
 6. **Few commands that compose over many that overlap** — `list --format json | jq` beats a search flag.
+7. **The specification where it prescribes, a stated policy where it does not** — where the GEDCOM specification is prescriptive, the tool does what it says. Where it offers a choice, is lenient, or is silent, the tool picks one policy, states it in the help, and applies it the same way in every command.
 
 ## Non-Goals
 
@@ -53,4 +54,4 @@ Check: judgment call — reviewers confirm per pull request that `internal/cli` 
 
 ---
 
-*Last refreshed: 2026-11-23*
+*Last refreshed: 2026-11-25*

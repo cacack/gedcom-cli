@@ -30,9 +30,10 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // changes the file goes in changingWriteCommands instead;
 // TestWriteCommandsListed fails for one in neither.
 var writeCommands = map[string]func(t *testing.T, in, out string) []string{
-	// Combining one file joins nothing to it.
+	// Combining one file joins nothing to it; --keep-header leaves its
+	// header unstamped.
 	"combine": func(_ *testing.T, in, out string) []string {
-		return []string{"combine", "--strategy", "zip", in, "-o", out}
+		return []string{"combine", "--strategy", "zip", "--keep-header", in, "-o", out}
 	},
 	"convert": func(_ *testing.T, in, out string) []string {
 		return []string{"convert", in, "--to", "5.5.1", "-o", out}
@@ -46,6 +47,18 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
 	"extract": extractEveryone,
+	// Moving a name to where it is changes nothing.
+	"name": func(_ *testing.T, in, out string) []string {
+		return []string{"name", in, "@I1@", "1", "--move-to", "1", "-o", out}
+	},
+	// A place table with no rows requests no change.
+	"places apply": func(t *testing.T, in, out string) []string {
+		table := filepath.Join(filepath.Dir(out), "places.tsv")
+		if err := os.WriteFile(table, []byte("place\tstandard\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"places", "apply", in, table, "-o", out}
+	},
 	// put with an unedited copy of every record, as get prints them.
 	"put": func(t *testing.T, in, out string) []string {
 		fragment := filepath.Join(t.TempDir(), "records.ged")
@@ -53,6 +66,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 			t.Fatal(err)
 		}
 		return []string{"put", in, fragment, "-o", out}
+	},
+	// put-header with an unedited copy of the header, as get prints it.
+	"put-header": func(t *testing.T, in, out string) []string {
+		header := filepath.Join(t.TempDir(), "head.ged")
+		if err := os.WriteFile(header, []byte(getRecord(t, in, "HEAD")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"put-header", in, header, "-o", out}
 	},
 }
 

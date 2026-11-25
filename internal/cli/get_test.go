@@ -351,4 +351,59 @@ func TestGetHelpHasExample(t *testing.T) {
 	if !strings.Contains(stdout, "gedcom get family.ged @I1@") {
 		t.Errorf("help has no example:\n%s", stdout)
 	}
+	if !strings.Contains(stdout, "\"-\" reads more\nxrefs from stdin") || !strings.Contains(stdout, "| gedcom get family.ged -") {
+		t.Errorf("help does not describe \"-\":\n%s", stdout)
+	}
+}
+
+// TestGetStdin checks "-": xrefs read from stdin print exactly as the same
+// xrefs given as arguments, where "-" stands among them.
+func TestGetStdin(t *testing.T) {
+	tests := []struct {
+		name, stdin string
+		args, same  []string
+	}{
+		{"stdin alone", "@I1@\n@F1@\n", []string{"-"}, []string{"@I1@", "@F1@"}},
+		{"among arguments", "I2\n", []string{"@I1@", "-", "HEAD"}, []string{"@I1@", "I2", "HEAD"}},
+		{"spaces and newlines", "I2 F1\n  I3\n", []string{"-"}, []string{"I2", "F1", "I3"}},
+	}
+	for _, tt := range tests {
+		for _, format := range []string{formatText, formatJSON} {
+			t.Run(tt.name+"/"+format, func(t *testing.T) {
+				_, want, _ := run(t, append([]string{"get", "--format", format, records}, tt.same...)...)
+				code, stdout, stderr := runStdin(t, tt.stdin, append([]string{"get", "--format", format, records}, tt.args...)...)
+				if code != ExitOK || stderr != "" {
+					t.Fatalf("exit = %d, stderr = %q", code, stderr)
+				}
+				if want == "" || stdout != want {
+					t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+				}
+			})
+		}
+	}
+	_, stdout, _ := runStdin(t, "I2\n", "get", records, "@I1@", "-", "HEAD")
+	i1, i2, head := strings.Index(stdout, "0 @I1@ INDI"), strings.Index(stdout, "0 @I2@ INDI"), strings.Index(stdout, "0 HEAD")
+	if i1 != 0 || i2 <= i1 || head <= i2 {
+		t.Errorf("want @I1@, then @I2@, then the header:\n%s", stdout)
+	}
+}
+
+func TestGetStdinErrors(t *testing.T) {
+	tests := []struct {
+		name, stdin, wantErr string
+		args                 []string
+		want                 int
+	}{
+		{"missing xref", "I1\nNOPE\n", "no such record: @NOPE@\n", []string{"get", records, "-"}, ExitError},
+		{"empty stdin", "", "no xrefs on stdin", []string{"get", records, "-"}, ExitError},
+		{"stdin twice", "I1", `"-" may be given only once`, []string{"get", records, "-", "-"}, ExitUsage},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, stdout, stderr := runStdin(t, tt.stdin, tt.args...)
+			if code != tt.want || stdout != "" || !strings.Contains(stderr, tt.wantErr) {
+				t.Errorf("exit = %d, stdout = %q, stderr = %q; want exit %d, stderr with %q", code, stdout, stderr, tt.want, tt.wantErr)
+			}
+		})
+	}
 }

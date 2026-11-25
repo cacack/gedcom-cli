@@ -1,0 +1,32 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 SUBM @U1@
+0 @U1@ SUBM
+1 NAME Test Submitter
+0 @S1@ SOUR
+1 TITL Example register
+0 @I1@ INDI
+1 NAME Ada /Example/
+2 GIVN Ada
+2 SURN Example
+2 SOUR @S1@
+3 PAGE folio 3
+2 NOTE Name as baptized
+2 _CUSTOM kept
+1 NAME Adaline /Sample/ Jr
+2 TYPE aka
+2 NICK Addie
+2 GIVN Adaline
+2 SURN Sample
+2 NSFX Jr
+2 SOUR @S1@
+1 SEX F
+1 NAME Ada Sample
+1 BIRT
+2 DATE 4 MAY 1900
+0 @F1@ FAM
+0 TRLR

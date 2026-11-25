@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/cacack/gedcom-go/v3/decoder"
 	"github.com/cacack/gedcom-go/v3/encoder"
@@ -110,6 +113,149 @@ func writeOutput(cmd *cobra.Command, out string, doc *gedcom.Document) error {
 	})
 }
 
+// stampSource is the HEAD.SOUR, and its NAME, of a header stamped by this
+// tool; its VERS is version(), as 'gedcom --version' prints it.
+const stampSource = "gedcom-cli"
+
+// exportStructures are the header structures that describe the input's
+// export rather than the file written (its destination, date and file name):
+// a command that makes a new dataset removes them when it stamps the header.
+var exportStructures = []string{"DEST", "DATE", "FILE"}
+
+// stampHelp is the help of every command that stamps the header.
+const stampHelp = `A stamped header names this tool as the system that wrote the file: its
+SOUR structure is replaced by "1 SOUR ` + stampSource + `", with VERS (the version
+'gedcom --version' prints) and NAME ` + stampSource + ` under it, where the SOUR was
+(at the end of the header if it had none). In a 5.5 or 5.5.1 file, where the
+data came from is kept in the SOUR's DATA, which the specification defines as
+"the electronic data source that was used to obtain the data": the input's
+SOUR DATA, with every line under it, when it has one, and otherwise "2 DATA"
+with the input's SOUR value. GEDCOM 7.0 deprecates HEAD.SOUR.DATA, so a 7.0
+header is stamped with no DATA. The report says whether the header was
+stamped and gives the input's SOUR (JSON "stamped" and "stamped_from").
+docs/spec-references.md quotes the specification text.`
+
+// exportStampHelp is the help of a command that stamps a new dataset.
+const exportStampHelp = `Stamping a new dataset also removes the header's DEST, DATE and FILE lines,
+which describe the input's export rather than this file. Every other header
+line is kept as read.`
+
+// addStampFlag registers --stamp, the opt-in stamp of a command that edits a
+// file in place of its author.
+func addStampFlag(cmd *cobra.Command) {
+	cmd.Flags().Bool("stamp", false, "stamp the header: replace its SOUR with "+stampSource+" and its version")
+}
+
+// addKeepHeaderFlag registers --keep-header, the opt-out of a command that
+// stamps the file it writes by default.
+func addKeepHeaderFlag(cmd *cobra.Command) {
+	cmd.Flags().Bool("keep-header", false, "write the header as read instead of stamping it, as for a cut to be zipped back byte for byte")
+}
+
+// stampRequested reads --stamp, or --keep-header where the command stamps by
+// default: whether the header of the file it writes is to be stamped.
+func stampRequested(cmd *cobra.Command) (bool, error) {
+	if cmd.Flags().Lookup("keep-header") != nil {
+		keep, err := cmd.Flags().GetBool("keep-header")
+		return !keep, err
+	}
+	return cmd.Flags().GetBool("stamp")
+}
+
+// stampedText is the end of a summary line that says the header was stamped,
+// and what its SOUR was.
+func stampedText(stamped bool, from string) string {
+	if stamped && from != "" {
+		return ", header stamped (SOUR was " + from + ")"
+	}
+	if stamped {
+		return ", header stamped"
+	}
+	return ""
+}
+
+// stampHeader replaces doc's header SOUR structure with this tool's, keeping
+// the input's source of the data as its DATA in a 5.x file (stampHelp), and
+// removes the level-1 structures tagged remove. Every other header line is
+// kept as it was. A header with no Tags is first given the lines the encoder
+// writes for it, as 'gedcom get' prints them. It returns the value of the SOUR
+// it replaced, "" if there was none.
+func stampHeader(doc *gedcom.Document, remove ...string) (string, error) {
+	h := doc.Header
+	if h == nil {
+		h = &gedcom.Header{}
+	}
+	if len(h.Tags) == 0 {
+		printed, err := printedHeader(h)
+		if err != nil {
+			return "", err
+		}
+		h = printed
+	}
+	from := ""
+	if sour := headerSour(h); sour != nil {
+		from = sour.Value
+	}
+	stamp := []*gedcom.Tag{
+		{Level: 1, Tag: "SOUR", Value: stampSource},
+		{Level: 2, Tag: "VERS", Value: version()},
+		{Level: 2, Tag: "NAME", Value: stampSource},
+	}
+	if doc.Header == nil || doc.Header.Version != gedcom.Version70 {
+		stamp = append(stamp, stampData(h)...)
+	}
+	removed := map[*gedcom.Tag]bool{}
+	for _, tag := range h.Tags {
+		if tag != nil && tag.Level == 1 && (tag.Tag == "SOUR" || slices.Contains(remove, tag.Tag)) {
+			for _, sub := range h.Subtree(tag) {
+				removed[sub] = true
+			}
+		}
+	}
+	tags := make([]*gedcom.Tag, 0, len(h.Tags)+len(stamp))
+	for _, tag := range h.Tags {
+		// The stamp takes the place of the first SOUR.
+		if stamp != nil && removed[tag] && tag.Level == 1 && tag.Tag == "SOUR" {
+			tags, stamp = append(tags, stamp...), nil
+		}
+		if !removed[tag] {
+			tags = append(tags, tag)
+		}
+	}
+	stamped := *h
+	stamped.Tags = append(tags, stamp...)
+	doc.Header = &stamped
+	return from, nil
+}
+
+// headerSour is h's first level-1 SOUR tag, or nil.
+func headerSour(h *gedcom.Header) *gedcom.Tag {
+	for _, tag := range h.Tags {
+		if tag != nil && tag.Level == 1 && tag.Tag == "SOUR" {
+			return tag
+		}
+	}
+	return nil
+}
+
+// stampData is the DATA of a stamped header's SOUR: h's SOUR DATA with its
+// subtree when it has one, else a DATA holding h's SOUR value, else nothing.
+func stampData(h *gedcom.Header) []*gedcom.Tag {
+	sour := headerSour(h)
+	if sour == nil {
+		return nil
+	}
+	for _, tag := range h.Subtree(sour) {
+		if tag.Level == 2 && tag.Tag == "DATA" {
+			return h.Subtree(tag)
+		}
+	}
+	if sour.Value == "" {
+		return nil
+	}
+	return []*gedcom.Tag{{Level: 2, Tag: "DATA", Value: sour.Value}}
+}
+
 // writeFileAtomic writes path through a temporary file in the same directory,
 // renamed over path only once write and the sync succeed, so a failure leaves
 // no partial file and an existing file at path untouched. The file replaced
@@ -168,4 +314,46 @@ func plural(n int, one, many string) string {
 		return "1 " + one
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// batchRow is one row of a --batch file: its tab-separated fields and the
+// line it is on.
+type batchRow struct {
+	line   int
+	fields []string
+}
+
+// readBatch reads the rows of a --batch file: tab-separated lines of
+// minFields to maxFields fields, the first minFields of them not empty; want
+// names them for the error. Blank lines and lines starting with # are skipped.
+// Every malformed line is reported, by line.
+func readBatch(name string, minFields, maxFields int, want string) ([]batchRow, error) {
+	f, err := os.Open(filepath.Clean(name))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var rows []batchRow
+	var errs []string
+	scanner := bufio.NewScanner(f)
+	for n := 1; scanner.Scan(); n++ {
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) < minFields || len(fields) > maxFields || slices.Contains(fields[:minFields], "") {
+			errs = append(errs, fmt.Sprintf("%s line %d: want %s, tab-separated", name, n, want))
+			continue
+		}
+		rows = append(rows, batchRow{line: n, fields: fields})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(errs) > 0 {
+		return nil, errors.New(strings.Join(errs, "\n"))
+	}
+	return rows, nil
 }

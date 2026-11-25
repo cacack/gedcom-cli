@@ -36,8 +36,11 @@ var combineStrategies = map[string]merge.CollisionStrategy{
 // combineReport is what combine prints: the file written, what it holds, what
 // each input's xrefs became, and what could not be joined.
 type combineReport struct {
-	Output          string                  `json:"output"`
-	Strategy        string                  `json:"strategy"`
+	Output   string `json:"output"`
+	Strategy string `json:"strategy"`
+	Stamped  bool   `json:"stamped"`
+	// StampedFrom is the value of the SOUR the stamp replaced.
+	StampedFrom     string                  `json:"stamped_from,omitempty"`
 	Records         int                     `json:"records"`
 	Individuals     int                     `json:"individuals"`
 	Families        int                     `json:"families"`
@@ -138,9 +141,14 @@ vendor tags, ...) is dropped, and listed in JSON "header_conflicts" (in
 text, a warning on stderr counts the values that differed or that the first
 file's header lacks).
 
+The first file's header is then stamped, since the output is a new dataset
+made by this tool. --keep-header writes it as read instead.
+
 The output is written normalized, since it was read from no one file. Given
-one UTF-8 file, combine writes it back exactly as it was read.
---redact-living applies to the output file, not only to the report.`,
+one UTF-8 file and --keep-header, combine writes it back exactly as it was
+read. --redact-living applies to the output file, not only to the report.
+
+` + stampHelp + "\n\n" + exportStampHelp,
 		Example: `  gedcom combine paternal.ged maternal.ged --strategy zip -o tree.ged
   gedcom combine paternal.ged maternal.ged --strategy zip --dropped maternal.json -o tree.ged
   gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
@@ -161,6 +169,10 @@ one UTF-8 file, combine writes it back exactly as it was read.
 			prefixes, _ := flags.GetStringSlice("prefix")
 			reports, _ := flags.GetStringSlice("dropped")
 			living, err := readLivingOptions(cmd)
+			if err != nil {
+				return err
+			}
+			stamp, err := stampRequested(cmd)
 			if err != nil {
 				return err
 			}
@@ -227,6 +239,13 @@ one UTF-8 file, combine writes it back exactly as it was read.
 					return err
 				}
 			}
+			if stamp {
+				from, err := stampHeader(doc, exportStructures...)
+				if err != nil {
+					return err
+				}
+				report.Stamped, report.StampedFrom = true, from
+			}
 			if err := writeOutput(cmd, out, doc); err != nil {
 				return err
 			}
@@ -244,6 +263,7 @@ one UTF-8 file, combine writes it back exactly as it was read.
 	cmd.Flags().String("strategy", "", `how to join records the files share: "zip", "prefix" or "renumber" (required)`)
 	cmd.Flags().StringSlice("prefix", nil, "with --strategy prefix, the prefix for each file after the first, comma-separated or repeated")
 	cmd.Flags().StringSlice("dropped", nil, "with --strategy zip, the saved 'extract --format json' report of each file after the first, comma-separated or repeated")
+	addKeepHeaderFlag(cmd)
 	return cmd
 }
 
@@ -373,9 +393,9 @@ func printCombineReport(w io.Writer, format string, report combineReport) error 
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintf(w, "wrote %s: %s, %s, %s\n", report.Output,
+	if _, err := fmt.Fprintf(w, "wrote %s: %s, %s, %s%s\n", report.Output,
 		plural(report.Records, "record", "records"), plural(report.Individuals, "individual", "individuals"),
-		plural(report.Families, "family", "families")); err != nil {
+		plural(report.Families, "family", "families"), stampedText(report.Stamped, report.StampedFrom)); err != nil {
 		return err
 	}
 	for _, in := range report.Inputs {
