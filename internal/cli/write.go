@@ -113,6 +113,100 @@ func writeOutput(cmd *cobra.Command, out string, doc *gedcom.Document) error {
 	})
 }
 
+// stampSource is the HEAD.SOUR, and its NAME, of a header stamped by this
+// tool; its VERS is version(), as 'gedcom --version' prints it.
+const stampSource = "gedcom-cli"
+
+// stampDropped are the header structures a stamp removes: the input's SOUR,
+// and the lines that describe the input's export rather than the file
+// written (its destination, date and file name).
+var stampDropped = []string{"SOUR", "DEST", "DATE", "FILE"}
+
+// stampHelp is the help of every command that stamps the header.
+const stampHelp = `A stamped header names this tool as the system that wrote the file: its
+SOUR structure is replaced by "1 SOUR ` + stampSource + `", with VERS (the version
+'gedcom --version' prints) and NAME ` + stampSource + ` under it, where the SOUR was
+(at the end of the header if it had none), and its DEST, DATE and FILE lines,
+which describe the input's export rather than this file, are removed. Every
+other header line is kept as read. The input's SOUR is copied nowhere:
+'gedcom get <file> HEAD' prints it from the input, which is never written.
+The report says whether the header was stamped (JSON "stamped").`
+
+// addStampFlag registers --stamp, the opt-in stamp of a command that edits a
+// file in place of its author.
+func addStampFlag(cmd *cobra.Command) {
+	cmd.Flags().Bool("stamp", false, "stamp the header: replace its SOUR with "+stampSource+" and its version, and remove DEST, DATE and FILE")
+}
+
+// addKeepHeaderFlag registers --keep-header, the opt-out of a command that
+// stamps the file it writes by default.
+func addKeepHeaderFlag(cmd *cobra.Command) {
+	cmd.Flags().Bool("keep-header", false, "write the header as read instead of stamping it, as for a cut to be zipped back byte for byte")
+}
+
+// stampRequested reads --stamp, or --keep-header where the command stamps by
+// default: whether the header of the file it writes is to be stamped.
+func stampRequested(cmd *cobra.Command) (bool, error) {
+	if cmd.Flags().Lookup("keep-header") != nil {
+		keep, err := cmd.Flags().GetBool("keep-header")
+		return !keep, err
+	}
+	return cmd.Flags().GetBool("stamp")
+}
+
+// stampedText is the end of a summary line that says the header was stamped.
+func stampedText(stamped bool) string {
+	if stamped {
+		return ", header stamped"
+	}
+	return ""
+}
+
+// stampHeader replaces doc's header SOUR structure with this tool's, and
+// removes its DEST, DATE and FILE structures (stampHelp). Every other header
+// line is kept as it was. A header with no Tags is first given the lines the
+// encoder writes for it, as 'gedcom get' prints them.
+func stampHeader(doc *gedcom.Document) error {
+	h := doc.Header
+	if h == nil {
+		h = &gedcom.Header{}
+	}
+	if len(h.Tags) == 0 {
+		printed, err := printedHeader(h)
+		if err != nil {
+			return err
+		}
+		h = printed
+	}
+	stamp := []*gedcom.Tag{
+		{Level: 1, Tag: "SOUR", Value: stampSource},
+		{Level: 2, Tag: "VERS", Value: version()},
+		{Level: 2, Tag: "NAME", Value: stampSource},
+	}
+	removed := map[*gedcom.Tag]bool{}
+	for _, tag := range h.Tags {
+		if tag != nil && tag.Level == 1 && slices.Contains(stampDropped, tag.Tag) {
+			for _, sub := range h.Subtree(tag) {
+				removed[sub] = true
+			}
+		}
+	}
+	tags := make([]*gedcom.Tag, 0, len(h.Tags)+len(stamp))
+	for _, tag := range h.Tags {
+		// The stamp takes the place of the first SOUR.
+		if stamp != nil && removed[tag] && tag.Level == 1 && tag.Tag == "SOUR" {
+			tags, stamp = append(tags, stamp...), nil
+		}
+		if !removed[tag] {
+			tags = append(tags, tag)
+		}
+	}
+	stamped := *h
+	stamped.Tags = append(tags, stamp...)
+	doc.Header = &stamped
+	return nil
+}
+
 // writeFileAtomic writes path through a temporary file in the same directory,
 // renamed over path only once write and the sync succeed, so a failure leaves
 // no partial file and an existing file at path untouched. The file replaced

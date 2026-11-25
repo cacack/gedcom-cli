@@ -88,6 +88,9 @@ type mergeReport struct {
 	Deduplicated []mergedPart `json:"deduplicated"`
 	Repointed    []mergeRef   `json:"repointed"`
 	Collapsed    []mergeRef   `json:"collapsed"`
+	// Stamped says the file written, which every pair's report shares, had
+	// its header stamped.
+	Stamped bool `json:"stamped"`
 	// Candidates is set by merge-people only.
 	Candidates *[]familyCandidate `json:"candidates,omitempty"`
 	// Dropped is set by merge-sources and merge-repositories only.
@@ -283,7 +286,15 @@ a record into itself, or names a record an earlier pair dropped (a drop named
 twice) is reported, by argument or by line, and nothing is written.
 
 The report then lists each pair's lines in turn, each line starting with the
-pair's keep and drop; --format json gives an array of reports, one per pair.`
+pair's keep and drop; --format json gives an array of reports, one per pair.
+
+The header is written as read, since the file is edited in place of its
+author. --stamp stamps it instead: only the header's SOUR, DEST, DATE and
+FILE lines then differ. The report then ends with the line "stamped",
+tab, "HEAD" (JSON "stamped"; with several pairs, in each pair's report,
+as they share the file).
+
+` + stampHelp
 
 // mergePair is one merge of a run: drop into keep, as typed, with where the
 // pair came from for an error.
@@ -452,6 +463,18 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 			doc = merged
 		}
 
+		stamp, err := stampRequested(cmd)
+		if err != nil {
+			return err
+		}
+		if stamp {
+			if err := stampHeader(doc); err != nil {
+				return err
+			}
+			for _, report := range reports {
+				report.Stamped = true
+			}
+		}
 		if err := writeOutput(cmd, out, doc); err != nil {
 			return err
 		}
@@ -473,6 +496,7 @@ func newMergeCmd(kind mergeKind, cmd *cobra.Command) *cobra.Command {
 		return nil
 	}
 	addOutputFlag(cmd)
+	addStampFlag(cmd)
 	cmd.Flags().String("batch", "", "tab-separated file of pairs to merge, one per line: keep, drop")
 	if kind.foldEvents {
 		cmd.Flags().Bool("fold-events", false, "fold an event of drop into keep's record of the same event, instead of adding it beside it")
@@ -627,6 +651,9 @@ func writeMergeText(w io.Writer, r *mergeReport, prefix string) error {
 		for _, c := range *r.Candidates {
 			lines = append(lines, "candidate\t"+c.Partner+"\t"+strings.Join(c.Families, "\t"))
 		}
+	}
+	if r.Stamped {
+		lines = append(lines, "stamped\tHEAD")
 	}
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(w, prefix+line); err != nil {

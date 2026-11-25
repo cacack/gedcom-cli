@@ -18,6 +18,7 @@ type extractReport struct {
 	Records     int              `json:"records"`
 	Individuals int              `json:"individuals"`
 	Families    int              `json:"families"`
+	Stamped     bool             `json:"stamped"`
 	Dropped     []droppedPointer `json:"dropped"`
 }
 
@@ -85,16 +86,21 @@ from the people extracted: a record nothing cites (a SUBM, REPO or SOUR with
 no pointer to it) is in no extract, and so not in the combined file.
 
 Records keep their xrefs, and every line that is kept is written as it was
-read. The header is the input's, so the output names the same submitter, and
+read. The header is the input's, stamped, since the output is a new dataset
+made by this tool; --keep-header writes it as read, for a cut to be zipped
+back byte for byte. The header names the same submitter, so the output
 carries the submitter's name, address, phone and email, unless
 --strip-submitter replaces each submitter record with one named ` + submitterValue + `.
-The header itself is copied unchanged, even with --strip-submitter: check its
-source and corporation lines before sharing the file.
+The rest of the header is copied unchanged, even with --strip-submitter:
+check its note and copyright lines (with --keep-header, its source and
+corporation lines too) before sharing the file.
 --redact-living applies to the output file, not only to the report.
 
 -o is required and may not name the input file; "-o -" writes the GEDCOM to
 stdout and the report to stderr. An existing output file is replaced, and only
-once the whole file is written.`,
+once the whole file is written.
+
+` + stampHelp,
 		Example: `  gedcom extract tree.ged @I1@ @I2@ -o couple.ged
   gedcom descendants --format json tree.ged I1 | jq -r '.[].xref' | gedcom extract tree.ged - -o branch.ged
   gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
@@ -115,6 +121,10 @@ once the whole file is written.`,
 				return err
 			}
 			living, err := readLivingOptions(cmd)
+			if err != nil {
+				return err
+			}
+			stamp, err := stampRequested(cmd)
 			if err != nil {
 				return err
 			}
@@ -151,10 +161,16 @@ once the whole file is written.`,
 			// does. A Layout is safe to share: the encoder writes a source
 			// line only where the record still reads as it.
 			branch.Layout = doc.Layout
+			if stamp {
+				if err := stampHeader(branch); err != nil {
+					return err
+				}
+			}
 			if err := writeOutput(cmd, out, branch); err != nil {
 				return err
 			}
 			report := newExtractReport(out, branch, dropped)
+			report.Stamped = stamp
 			// With -o - and JSON the report goes to stderr, and its dropped
 			// list stands in for the warnings so stderr is one JSON document.
 			if out != stdio || format != formatJSON {
@@ -166,14 +182,16 @@ once the whole file is written.`,
 			if format == formatJSON {
 				return writeJSON(w, report)
 			}
-			_, err = fmt.Fprintf(w, "wrote %s: %s, %s, %s, %s dropped\n", outputName(out),
+			_, err = fmt.Fprintf(w, "wrote %s: %s, %s, %s, %s dropped%s\n", outputName(out),
 				plural(report.Records, "record", "records"), plural(report.Individuals, "individual", "individuals"),
-				plural(report.Families, "family", "families"), plural(len(report.Dropped), "pointer", "pointers"))
+				plural(report.Families, "family", "families"), plural(len(report.Dropped), "pointer", "pointers"),
+				stampedText(report.Stamped))
 			return err
 		},
 	}
 	addOutputFlag(cmd)
-	cmd.Flags().Bool("strip-submitter", false, "replace each submitter record with one named "+submitterValue+", dropping its address, phone, email and notes (the header is kept as read)")
+	cmd.Flags().Bool("strip-submitter", false, "replace each submitter record with one named "+submitterValue+", dropping its address, phone, email and notes (the header SUBM pointer is kept)")
+	addKeepHeaderFlag(cmd)
 	return cmd
 }
 

@@ -18,7 +18,7 @@ pull requests and releases are covered in README
   may keep its subcommands in one file or split them into one file each.
 - Code shared by commands: `root.go` (exit codes, `usageError`, `--format`),
   `living.go` (`--redact-living`) and `write.go` (reading a file to write it
-  back, and `-o`).
+  back, `-o`, and stamping the header with `--stamp` or `--keep-header`).
 
 ## No GEDCOM logic here
 
