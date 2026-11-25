@@ -448,15 +448,15 @@ gedcom extract --redact-living --strip-submitter tree.ged I1 -o share.ged
 ```text
 gedcom: warning: dropped pointer @F3@ HUSB @I7@ (restorable)
 gedcom: warning: dropped pointer @F3@ WIFE @I8@ (restorable)
-wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped
+wrote couple.ged: 6 records, 2 individuals, 1 family, 2 pointers dropped, header stamped
 ```
 
 A pointer to an individual or family left out (a family's `HUSB` for a
 parent not extracted) is removed, so the output has no dangling pointers;
 [`combine`](#combine) with `--strategy zip` puts the restorable ones back.
-The output carries the input's header and submitter, contact details
-included: read the help on what `--strip-submitter` does and does not remove
-before sharing a file.
+The output carries the input's header, [stamped](#conventions), and its
+submitter, contact details included: read the help on what
+`--strip-submitter` does and does not remove before sharing a file.
 
 To put the extracts of one master back together in the master's order, save
 each one's JSON report and give `combine` the reports of the files after the
@@ -469,8 +469,9 @@ gedcom combine a.ged b.ged --strategy zip --dropped b.json -o tree2.ged
 gedcom diff tree.ged tree2.ged
 ```
 
-Without the reports, a family split between files gets its `HUSB`, `WIFE`
-and `CHIL` lines back in one file's order. Either way the round trip
+Give `--keep-header` to both commands to get the master's header back too
+(`gedcom diff --include-header`). Without the reports, a family split between
+files gets its `HUSB`, `WIFE` and `CHIL` lines back in one file's order. Either way the round trip
 reproduces only the records reachable from the people extracted: a record
 nothing cites (a `SUBM`, `REPO` or `SOUR` with no pointer to it) is in no
 extract, and so not in the combined file.
@@ -496,7 +497,8 @@ Every line `put` was not asked to change is written exactly as it was read,
 so a record put back unedited leaves the output byte-identical. What the
 decoder could not read cleanly in the records file is reported as `validate`
 reports it, with its xref and its line number in that file; an error stops
-the write. Pointers are not checked: run `validate` on the output.
+the write. Pointers are not checked: run `validate` on the output. The header
+is written as read; `--stamp` [stamps](#conventions) it.
 
 ### put-header
 
@@ -682,7 +684,9 @@ another type, merges a record into itself, or names a record an earlier pair
 dropped is reported by argument or by line, and nothing is written. The
 report lists each pair's lines in turn, each starting with the pair's keep
 and drop; `--format json` gives an array of reports, one per pair. A single
-`<keep> <drop>` prints the report above, unlabeled.
+`<keep> <drop>` prints the report above, unlabeled. On every merge command
+`--stamp` [stamps](#conventions) the header, which is otherwise written as
+read.
 
 ### combine
 
@@ -699,14 +703,15 @@ gedcom combine mine.ged cousin.ged --strategy prefix --prefix C_ -o both.ged
 ```
 
 ```text
-wrote both.ged: 412 records, 260 individuals, 98 families
+wrote both.ged: 412 records, 260 individuals, 98 families, header stamped
 cousin.ged	@F1@	@C_F1@
 cousin.ged	@F2@	@C_F2@
 cousin.ged	@I1@	@C_I1@
 ...
 ```
 
-Each renamed xref is a line (file, old, new).
+Each renamed xref is a line (file, old, new). The header is the first
+file's, [stamped](#conventions) unless `--keep-header` is given.
 
 ## Conventions
 
@@ -719,6 +724,20 @@ These hold for every command, so scripts and agents can rely on them:
   on stdout and its report on stderr; with `--format json` stderr then holds
   only that JSON report.
 - **`--format json`** gives machine-readable output; the default is text.
+- **The header names who wrote the file.** `extract` and `combine` make a new
+  dataset, so they stamp its header: the input's `SOUR` structure is replaced
+  by `1 SOUR gedcom-cli`, with `VERS` (what `gedcom --version` prints) and
+  `NAME gedcom-cli`, and its `DEST`, `DATE` and `FILE` lines, which describe
+  the input's export, are removed. Every other header line is kept.
+  `--keep-header` writes the header as read, for a cut to be zipped back
+  byte for byte. The other write commands edit a file in place of its author
+  and write the header as read; `put` and the merge commands take `--stamp`
+  to replace its `SOUR` structure the same way, leaving every other line,
+  and `gedcom put --stamp file.ged /dev/null -o out.ged` does that to the
+  output of any of them. The input's `SOUR` is not copied anywhere:
+  `get <input> HEAD` prints it. The report says when the header was stamped
+  (`stamped` in JSON; `header stamped` in a summary line, a `stamped HEAD`
+  line in a merge report).
 - **Exit codes:** `0` success, `1` the command failed (unreadable file, decode
   error), `validate` found errors or `combine` found conflicts, `2` the command
   line was wrong.

@@ -30,9 +30,10 @@ var roundTripFixtures = map[string]*regexp.Regexp{
 // changes the file goes in changingWriteCommands instead;
 // TestWriteCommandsListed fails for one in neither.
 var writeCommands = map[string]func(t *testing.T, in, out string) []string{
-	// Combining one file joins nothing to it.
+	// Combining one file joins nothing to it; --keep-header leaves its
+	// header unstamped.
 	"combine": func(_ *testing.T, in, out string) []string {
-		return []string{"combine", "--strategy", "zip", in, "-o", out}
+		return []string{"combine", "--strategy", "zip", "--keep-header", in, "-o", out}
 	},
 	"convert": func(_ *testing.T, in, out string) []string {
 		return []string{"convert", in, "--to", "5.5.1", "-o", out}

@@ -93,7 +93,7 @@ func TestCombineZipRoundTrip(t *testing.T) {
 		}
 	}
 	out := filepath.Join(t.TempDir(), "tree.ged")
-	code, stdout, stderr := run(t, append(append([]string{"combine", "--strategy", "zip"}, branches...), "-o", out)...)
+	code, stdout, stderr := run(t, append(append([]string{"combine", "--strategy", "zip", "--keep-header"}, branches...), "-o", out)...)
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
@@ -137,7 +137,7 @@ func extractWithReport(t *testing.T, master, name string, xrefs ...string) (ged,
 	t.Helper()
 	dir := t.TempDir()
 	ged, report = filepath.Join(dir, name+".ged"), filepath.Join(dir, name+".json")
-	code, stdout, stderr := run(t, append(append([]string{"extract", "--format", "json", master}, xrefs...), "-o", ged)...)
+	code, stdout, stderr := run(t, append(append([]string{"extract", "--keep-header", "--format", "json", master}, xrefs...), "-o", ged)...)
 	if code != ExitOK {
 		t.Fatalf("extract %s: exit = %d, stderr = %q", name, code, stderr)
 	}
@@ -185,7 +185,7 @@ func TestCombineZipDropped(t *testing.T) {
 			zip := func(extra ...string) (out, diff string) {
 				t.Helper()
 				out = filepath.Join(t.TempDir(), "zipped.ged")
-				args := append(append([]string{"combine", "--strategy", "zip"}, files...), extra...)
+				args := append(append([]string{"combine", "--strategy", "zip", "--keep-header"}, files...), extra...)
 				code, stdout, stderr := run(t, append(args, "-o", out)...)
 				if want := "wrote " + out + ": 13 records, 8 individuals, 3 families\n"; code != ExitOK || stderr != "" || stdout != want {
 					t.Fatalf("combine: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
@@ -226,8 +226,13 @@ func TestCombineZipDropped(t *testing.T) {
 				if want := zipOrderFixture + " and " + out + ": no differences\n"; diff != want {
 					t.Errorf("diff = %q, want %q", diff, want)
 				}
+				// --keep-header on extract and combine gives the master's
+				// header back too.
+				if _, diff, _ := run(t, "diff", "--include-header", zipOrderFixture, out); !strings.HasSuffix(diff, ": no differences\n") {
+					t.Errorf("diff --include-header = %q, want no differences", diff)
+				}
 				for key, lines := range master {
-					if key != "0 HEAD" && !reflect.DeepEqual(gedcomRecords(t, out)[key], lines) {
+					if !reflect.DeepEqual(gedcomRecords(t, out)[key], lines) {
 						t.Errorf("%s = %q, want %q", key, gedcomRecords(t, out)[key], lines)
 					}
 				}
@@ -314,7 +319,7 @@ func TestCombineZipJSON(t *testing.T) {
 		headerConflicts = append(headerConflicts, combineHeaderConflict{File: branches[1], Field: "Tags." + tag, Kept: "kept", Dropped: "dropped (KeepFirstHeader keeps doc1's header alone)"})
 	}
 	want := combineReport{
-		Output: out, Strategy: "zip", Records: 15, Individuals: 8, Families: 3,
+		Output: out, Strategy: "zip", Stamped: true, Records: 15, Individuals: 8, Families: 3,
 		Inputs: []combineInput{
 			{File: branches[0], Encoding: "UTF-8", Remapped: map[string]string{}},
 			{File: branches[1], Encoding: "UTF-8", Remapped: map[string]string{}},
@@ -425,7 +430,7 @@ func TestCombinePrefix(t *testing.T) {
 	}
 	// minimal holds 4 records, combine 15; every one is kept, and every one
 	// of a later file is a line of the report.
-	want := "wrote " + out + ": 23 records, 12 individuals, 5 families\n"
+	want := "wrote " + out + ": 23 records, 12 individuals, 5 families, header stamped\n"
 	wantXRefs := slices.Clone(first)
 	for _, in := range []struct {
 		file, prefix string
@@ -573,7 +578,7 @@ func TestCombineHeader(t *testing.T) {
 	want := header(sample)
 	for _, strategy := range [][]string{{"zip"}, {"prefix", "--prefix", "B_"}, {"renumber"}} {
 		out := filepath.Join(t.TempDir(), "both.ged")
-		args := append([]string{"combine", "--format", "json", sample, later, "-o", out, "--strategy"}, strategy...)
+		args := append([]string{"combine", "--keep-header", "--format", "json", sample, later, "-o", out, "--strategy"}, strategy...)
 		code, stdout, stderr := run(t, args...)
 		if code != ExitOK || stderr != "" {
 			t.Fatalf("%s: exit = %d, stderr = %q", strategy[0], code, stderr)
