@@ -181,9 +181,9 @@ type batchRow struct {
 }
 
 // readBatch reads the rows of a --batch file: tab-separated lines of
-// minFields to maxFields fields, the first minFields of them not empty; want names them for the error.
-// Blank lines and lines starting with # are skipped. Every malformed line is
-// reported, by line.
+// minFields to maxFields fields, the first minFields of them not empty; want
+// names them for the error. Blank lines and lines starting with # are skipped.
+// Every malformed line is reported, by line.
 func readBatch(name string, minFields, maxFields int, want string) ([]batchRow, error) {
 	f, err := os.Open(filepath.Clean(name))
 	if err != nil {

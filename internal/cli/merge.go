@@ -307,6 +307,9 @@ func mergePairs(cmd *cobra.Command, args []string) ([]mergePair, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		return nil, usageError{fmt.Errorf("%s has no pairs to merge", batch)}
+	}
 	pairs := make([]mergePair, 0, len(rows))
 	for _, row := range rows {
 		pairs = append(pairs, mergePair{label: fmt.Sprintf("%s line %d", batch, row.line), keep: row.fields[0], drop: row.fields[1]})

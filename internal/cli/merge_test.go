@@ -778,6 +778,7 @@ func TestMergeManyInvalid(t *testing.T) {
 	twice := writeTemp(t, "twice.tsv", "S1\tS2\nS3\tS2\n")
 	removed := writeTemp(t, "removed.tsv", "S1\tS2\nS2\tS3\n")
 	malformed := writeTemp(t, "malformed.tsv", "S1\tS2\nS3\n")
+	empty := writeTemp(t, "empty.tsv", "# no pairs\n\n")
 	tests := []struct {
 		name string
 		args []string
@@ -793,6 +794,7 @@ func TestMergeManyInvalid(t *testing.T) {
 		{"drop twice", []string{"--batch", twice}, ExitUsage, twice + " line 2: @S2@ was merged into @S1@ by " + twice + " line 1"},
 		{"keep already dropped", []string{"--batch", removed}, ExitUsage, removed + " line 2: @S2@ was merged into @S1@ by " + removed + " line 1"},
 		{"malformed row", []string{"--batch", malformed}, ExitError, malformed + " line 2: want keep and drop, tab-separated"},
+		{"empty batch", []string{"--batch", empty}, ExitUsage, empty + " has no pairs to merge"},
 		{"batch and pairs", []string{"--batch", missing, "S1", "S2"}, ExitUsage, "give <file> alone"},
 		{"missing batch", []string{"--batch", filepath.Join(dir, "none.tsv")}, ExitError, "none.tsv"},
 	}
