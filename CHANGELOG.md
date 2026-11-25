@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.8.0](https://github.com/cacack/gedcom-cli/compare/v0.7.0...v0.8.0) (2026-11-25)
+
+
+### Features
+
+* add name command to edit one of a person's names ([65f8c86](https://github.com/cacack/gedcom-cli/commit/65f8c86a3987df0aa0493d9ec7bfea4bc2525759))
+* add places apply to rewrite PLAC values and set MAP from a place table ([9de4e11](https://github.com/cacack/gedcom-cli/commit/9de4e11f7205af4f9c937cddb0de82b962f221f5))
+* add put-header to replace a file's header ([29058cf](https://github.com/cacack/gedcom-cli/commit/29058cf4906d35710797cab257a480e77be1a8d5))
+* **get:** read xrefs from stdin with -, as relatives and extract do ([c512ce2](https://github.com/cacack/gedcom-cli/commit/c512ce2ae84de9575ce3e1698efcb2dabb2aa52a))
+* keep the input's source as HEAD.SOUR.DATA when stamping a 5.x header ([f93c524](https://github.com/cacack/gedcom-cli/commit/f93c5244101ad47c7f95b99e47757de95e712cca))
+* **list:** list every NAME line with its parts and flag repeated names ([8bcfe38](https://github.com/cacack/gedcom-cli/commit/8bcfe386327cc429d4a299779d47425d167e6ac6))
+* merge many pairs in one run of the merge commands ([a33a1d2](https://github.com/cacack/gedcom-cli/commit/a33a1d275f4aa7579ae164cbe224c6e1e2d5c298))
+* stamp the header of files combine and extract write ([c0baff4](https://github.com/cacack/gedcom-cli/commit/c0baff469d1e3daceb88bd1c3a09dc9a83107a59))
+* **validate:** give decode findings the xref of the record they are in ([36659c2](https://github.com/cacack/gedcom-cli/commit/36659c2e69eaa2626ff57257e3c113f4ecb04004))
+
+
+### Bug Fixes
+
+* drop a NAME's CONC and CONT lines when name sets its value ([7e4da74](https://github.com/cacack/gedcom-cli/commit/7e4da744462824d82b3e63ed888564a6e8e55886))
+* leave a PLAC continued on CONC or CONT lines unmatched in places apply ([cb27506](https://github.com/cacack/gedcom-cli/commit/cb27506495928fdc5b89c4425014926d595ce7c8))
+* let put-header take back the header get prints for a non-UTF-8 file ([efa16dd](https://github.com/cacack/gedcom-cli/commit/efa16dd92562d2760de2cc18ff08ab047bb8f94e))
+* make --stamp on put and merge replace only the header SOUR ([bc17214](https://github.com/cacack/gedcom-cli/commit/bc172147d3165ac10a9b5a5ae14eb34be1b85b45))
+* reject a merge --batch file with no pairs ([bdc4809](https://github.com/cacack/gedcom-cli/commit/bdc480913c7b9392236aacedd8a6386b913ff372))
+
 ## [0.7.0](https://github.com/cacack/gedcom-cli/compare/v0.6.0...v0.7.0) (2026-11-24)
 
 
