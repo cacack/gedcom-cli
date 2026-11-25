@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -56,6 +56,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`media add`](#media-add) | Link a media file from a record, writing a new file |
 | [`extract`](#extract) | Write a branch of the tree to its own file |
 | [`put`](#put) | Replace records by xref, or add new ones, writing a new file |
+| [`put-header`](#put-header) | Replace the header, writing a new file |
 | [`delete`](#delete) | Remove records by xref, writing a new file |
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
@@ -104,7 +105,8 @@ gedcom get --format json family.ged @I1@
 
 With `--format json` each record is gedcom-go's own shape for it, plus a
 `Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`, and `HEAD` for the
-header). `put` takes records back, not the header.
+header). `put` takes records back; [`put-header`](#put-header) takes the
+header back.
 
 ### list
 
@@ -435,6 +437,29 @@ Every line `put` was not asked to change is written exactly as it was read,
 so a record put back unedited leaves the output byte-identical. Pointers are
 not checked: run `validate` on the output.
 
+### put-header
+
+Replaces a file's header with the lines `get <file> HEAD` prints, edited: to
+drop lines another program left in it (`DEST`, `FILE`, `COPR`, `NOTE`), or
+to make its `SOUR`, `DATE` and `SUBM` describe the tree itself.
+
+```sh
+gedcom get family.ged HEAD > head.ged
+$EDITOR head.ged
+gedcom put-header family.ged head.ged -o family-edited.ged
+gedcom diff --include-header family.ged family-edited.ged
+```
+
+```text
+wrote family-edited.ged: header replaced
+```
+
+Every line outside the header is written exactly as it was read, and a header
+put back unedited leaves the output byte-identical. A header whose `GEDC.VERS`
+or `CHAR` differs from the file's is refused: that is `convert`'s job. What
+the version requires of a header (`SOUR`, `SUBM`) is not checked: run
+`validate` on the output.
+
 ### delete
 
 Removes records by xref. While other records still point at them, it writes
@@ -600,7 +625,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `delete`, `media add`, the merge commands and
+  too: `put`, `put-header`, `delete`, `media add`, the merge commands and
   `convert` edit or rewrite the whole tree and write it unredacted. Source,
   media, repository and submitter records are not redacted, even when a
   hidden record cites them, and neither is the header (`get HEAD`):

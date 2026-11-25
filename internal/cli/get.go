@@ -27,8 +27,8 @@ a file defines an xref twice, the first definition is printed.
 HEAD, exactly, prints the header's lines instead, and may be given among the
 xrefs; @HEAD@ is an xref. The header is printed as the file has it, even with
 --redact-living: like a submitter record, it is never redacted, so check any
-names in its lines yourself. 'gedcom put' does not take the header back: it
-replaces records only.
+names in its lines yourself. 'gedcom put-header' takes the header back;
+'gedcom put' replaces records only.
 
 --format json prints an array holding each record in gedcom-go's own shape.
 Its keys are the library's field names (XRef, Names, Husband), not the
@@ -163,13 +163,7 @@ func writeRecordsText(w io.Writer, doc *gedcom.Document, selected []any) error {
 	for _, item := range selected {
 		switch item := item.(type) {
 		case *gedcom.Header:
-			// A stream encoder writes the header Encode writes. It is left
-			// without its trailer, so it is flushed rather than closed.
-			enc := encoder.NewStreamEncoder(w)
-			if err := enc.WriteHeader(item); err != nil {
-				return err
-			}
-			if err := enc.Flush(); err != nil {
+			if err := encodeHeader(w, item); err != nil {
 				return err
 			}
 		case *gedcom.Record:
@@ -179,4 +173,15 @@ func writeRecordsText(w io.Writer, doc *gedcom.Document, selected []any) error {
 		}
 	}
 	return nil
+}
+
+// encodeHeader writes the header's lines as Encode would write them.
+func encodeHeader(w io.Writer, h *gedcom.Header) error {
+	// A stream encoder writes the header Encode writes. It is left without
+	// its trailer, so it is flushed rather than closed.
+	enc := encoder.NewStreamEncoder(w)
+	if err := enc.WriteHeader(h); err != nil {
+		return err
+	}
+	return enc.Flush()
 }

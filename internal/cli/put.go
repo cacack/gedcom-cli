@@ -35,7 +35,8 @@ func newPutCmd() *cobra.Command {
 		Long: `Write file to a new file with the records of records.ged put in: each one
 replaces the record with the same xref, in its place, or is appended when the
 xref is new. records.ged holds level-0 records only, with no HEAD or TRLR, as
-'gedcom get' prints them; "-" reads them from stdin.
+'gedcom get' prints them; "-" reads them from stdin. 'gedcom put-header'
+replaces the header.
 
 Every other line is written exactly as it was read. A record whose lines are
 unchanged is left as it was, so putting back an unedited copy writes the file
