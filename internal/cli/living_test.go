@@ -163,6 +163,8 @@ func TestRedactLiving(t *testing.T) {
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
+		// places apply reports counts and the table's unmatched places only.
+		{"places apply", []string{"places", "apply", living, livingPlaces(t), "-o", out}, ExitOK, []string{"3 PLAC rewritten", "3 records changed"}},
 		// The decode finding is on Dirk's line, the note is Cleo's and the
 		// validation issue is about Esme's birth date.
 		{"convert", []string{"convert", living, "--to", "7.0", "-o", out}, ExitOK, []string{"5.5.1 -> 7.0", "INVALID_LEVEL\tline 40\tLiving", "Note @N1@\tLiving\tLiving\tLiving", "validation (1)\n  Living\n", "VERSION_UPGRADE"}},
@@ -262,6 +264,13 @@ func livingWithSources(t *testing.T) string {
 	return writeTemp(t, "living-sources.ged", s)
 }
 
+// livingPlaces is a place table for the living fixture that renames Oldtown,
+// Ann's and her family's place, and Hiddenvale, Cleo's.
+func livingPlaces(t *testing.T) string {
+	t.Helper()
+	return writeTemp(t, "places.tsv", "place\tstandard\nOldtown, Example County\tOldtown\nHiddenvale, Example County\tHiddenvale\n")
+}
+
 // TestRedactLivingWholeFiles checks the README's rule for the files written
 // with --redact-living: extract and combine redact theirs (TestRedactLiving
 // and TestCombineRedactLiving), and every other write command writes the
@@ -275,6 +284,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"delete", "--force", living, "@I5@"},
 		{"name", living, "@I3@", "1", "--type", "birth"},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
+		{"places", "apply", living, livingPlaces(t)},
 		{"merge-people", living, "@I3@", "@I5@"},
 		{"merge-families", living, "@F1@", "@F2@"},
 		{"merge-sources", sources, "@S1@", "@S2@"},

@@ -54,6 +54,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`diff`](#diff) | Compare two versions of a file record by record |
 | [`media check`](#media-check) | Report whether each `FILE` reference resolves under a media folder |
 | [`media add`](#media-add) | Link a media file from a record, writing a new file |
+| [`places apply`](#places-apply) | Rewrite `PLAC` values and set their coordinates from a place table, writing a new file |
 | [`extract`](#extract) | Write a branch of the tree to its own file |
 | [`put`](#put) | Replace records by xref, or add new ones, writing a new file |
 | [`put-header`](#put-header) | Replace the header, writing a new file |
@@ -402,6 +403,34 @@ gedcom media add family.ged --root media --batch links.tsv -o out.ged
 @I1@	@O2@	created	photos/ada.jpg
 ```
 
+### places apply
+
+Applies a place authority list to a file once you have settled what each
+place string in `list plac` should read. The table is tab-separated with a
+header row: `place` (matched byte for byte), `standard`, and `latitude` and
+`longitude` in GEDCOM form; other columns are ignored. Each `PLAC` whose
+value is a `place` gets the `standard` name and, when the row has
+coordinates, a `MAP` with `LATI` and `LONG`, or the table's coordinates in
+the `MAP` it already has. A malformed row is reported by line and nothing is
+written:
+
+```sh
+gedcom places apply family.ged places.tsv -o out.ged
+```
+
+```text
+wrote out.ged: 5 PLAC rewritten, 3 MAP added, 1 MAP updated, 3 records changed
+  no MAP permitted	line 48
+  no MAP permitted	line 51
+  unmatched	Nowhere, Example County
+```
+
+`MAP` is added only where the file's GEDCOM version permits one, as
+gedcom-go's grammar check reads it: not under a place of publication
+(`SOUR.PUBL.PLAC`), nor anywhere in a 5.5 file. Every other line is written as
+read, so running it again with the same table changes nothing. A `PLAC`
+continued on `CONC` or `CONT` lines is left as written.
+
 ### extract
 
 Writes a branch of the tree to its own file: the individuals given, every
@@ -707,7 +736,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `put-header`, `delete`, `name`, `media add`, the merge commands and
+  too: `put`, `put-header`, `delete`, `name`, `media add`, `places apply`, the merge commands and
   `convert` edit or rewrite the whole tree and write it unredacted. Source,
   media, repository and submitter records are not redacted, even when a
   hidden record cites them, and neither is the header (`get HEAD`):
