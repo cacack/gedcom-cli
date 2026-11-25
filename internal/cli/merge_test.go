@@ -378,7 +378,7 @@ func TestMergeUsage(t *testing.T) {
 		{"missing family", []string{"merge-families", mergeFixture, "F9", "F1", "-o", out}, ExitError, "no such record: @F9@"},
 		{"no output", []string{"merge-people", mergeFixture, "I1", "I2"}, ExitUsage, "--output (-o) is required"},
 		{"output is input", []string{"merge-people", mergeFixture, "I1", "I2", "-o", mergeFixture}, ExitUsage, "is the input file"},
-		{"too few arguments", []string{"merge-families", mergeFixture, "F1", "-o", out}, ExitUsage, "accepts 3 arg(s)"},
+		{"too few arguments", []string{"merge-families", mergeFixture, "F1", "-o", out}, ExitUsage, "requires at least 3 arg(s)"},
 		{"missing file", []string{"merge-people", "testdata/does-not-exist.ged", "I1", "I2", "-o", out}, ExitError, "does-not-exist.ged"},
 		{"same source", []string{"merge-sources", sourcesFixture, "S1", "@S1@", "-o", out}, ExitUsage, "keep and drop are both @S1@"},
 		{"missing source", []string{"merge-sources", sourcesFixture, "S1", "S99", "-o", out}, ExitError, "no such record: @S99@"},
@@ -627,5 +627,194 @@ func TestMergeToStdout(t *testing.T) {
 	}
 	if stderr == "" {
 		t.Errorf("the report is not on stderr")
+	}
+}
+
+// mergeOneByOne merges each pair of in by one run of cmd, each on the last
+// run's output, and returns the last output's path with every run's report,
+// each line starting with its pair, as a run merging them all prints it.
+func mergeOneByOne(t *testing.T, cmd, in string, pairs ...[2]string) (out, report string) {
+	t.Helper()
+	out = in
+	for _, pair := range pairs {
+		var stdout string
+		out, stdout = runMerge(t, cmd, out, pair[0], pair[1])
+		for line := range strings.Lines(stdout) {
+			report += pair[0] + "\t" + pair[1] + "\t" + line
+		}
+	}
+	return out, report
+}
+
+// assertSameFile fails unless the files at got and want hold the same bytes.
+func assertSameFile(t *testing.T, got, want string) {
+	t.Helper()
+	g, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(g, w) {
+		t.Errorf("output differs from the runs one pair at a time:\n got %q\nwant %q", g, w)
+	}
+}
+
+// TestMergeSeveralDrops merges two sources into one in one run: the file and
+// the report are those of the two runs one pair at a time.
+func TestMergeSeveralDrops(t *testing.T) {
+	want, wantReport := mergeOneByOne(t, "merge-sources", sourcesFixture, [2]string{"@S1@", "@S2@"}, [2]string{"@S1@", "@S3@"})
+	out, stdout := runMerge(t, "merge-sources", sourcesFixture, "S1", "S2", "S3")
+	assertSameFile(t, out, want)
+	assertValid(t, out)
+	if stdout != wantReport {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, wantReport)
+	}
+	// Each pair's lines, labeled: carried, deduplicated, dropped, conflicting.
+	for _, line := range []string{
+		"@S1@\t@S2@\tmoved\tPUBL\t1 PUBL Example Press\n",
+		"@S1@\t@S2@\tdeduplicated\tTITL\t1 TITL Example parish register\n",
+		"@S1@\t@S3@\tconflict\t_APID\t1 _APID 1,5678::0\n",
+		"@S1@\t@S3@\tdropped\tTITL\t1 TITL Example parish register, 1800-1850\t1 TITL Example parish register\n",
+		"@S1@\t@S3@\trepointed\t@F1@\tFAM.SOUR\n",
+	} {
+		if !strings.Contains(stdout, line) {
+			t.Errorf("stdout lacks %q:\n%s", line, stdout)
+		}
+	}
+
+	_, stdout = runMerge(t, "merge-sources", sourcesFixture, "--format", "json", "S1", "S2", "S3")
+	var got []mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array: %v\n%s", err, stdout)
+	}
+	if len(got) != 2 || got[0].Keep != "@S1@" || got[0].Drop != "@S2@" || got[1].Keep != "@S1@" || got[1].Drop != "@S3@" {
+		t.Fatalf("reports = %+v, want @S2@ then @S3@ into @S1@", got)
+	}
+	if got[1].Dropped == nil || len(*got[1].Dropped) != 1 || len(got[0].Deduplicated) != 3 || len(got[1].Moved) != 1 || !got[1].Moved[0].Conflict {
+		t.Errorf("reports = %+v", got)
+	}
+}
+
+// TestMergeBatch merges the pairs of a --batch file, comments and blank lines
+// skipped: the file and the report are those of the runs one pair at a time.
+// The second row drops the first row's keep.
+func TestMergeBatch(t *testing.T) {
+	pairs := writeTemp(t, "pairs.tsv", "# keep\tdrop\nS1\tS2\n\n@S3@\t@S1@\r\n")
+	want, wantReport := mergeOneByOne(t, "merge-sources", sourcesFixture, [2]string{"@S1@", "@S2@"}, [2]string{"@S3@", "@S1@"})
+	out, stdout := runMerge(t, "merge-sources", sourcesFixture, "--batch", pairs)
+	assertSameFile(t, out, want)
+	assertValid(t, out)
+	if stdout != wantReport {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, wantReport)
+	}
+	if !strings.Contains(stdout, "@S3@\t@S1@\tdropped\tTITL\t1 TITL Example parish register\t1 TITL Example parish register, 1800-1850\n") {
+		t.Errorf("stdout lacks the second pair's dropped line:\n%s", stdout)
+	}
+
+	_, stdout = runMerge(t, "merge-sources", sourcesFixture, "--format", "json", "--batch", pairs)
+	var got []mergeReport
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not a JSON array: %v\n%s", err, stdout)
+	}
+	if len(got) != 2 || got[0].Drop != "@S2@" || got[1].Keep != "@S3@" || got[1].Drop != "@S1@" {
+		t.Errorf("reports = %+v", got)
+	}
+
+	// A batch of one row is still labeled, and an array.
+	one := writeTemp(t, "one.tsv", "S1\tS2\n")
+	_, stdout = runMerge(t, "merge-sources", sourcesFixture, "--format", "json", "--batch", one)
+	if !strings.HasPrefix(stdout, "[") {
+		t.Errorf("stdout is not an array:\n%s", stdout)
+	}
+}
+
+// TestMergeRepositoriesSeveral takes merge-sources' forms to
+// merge-repositories.
+func TestMergeRepositoriesSeveral(t *testing.T) {
+	want, wantReport := mergeOneByOne(t, "merge-repositories", sourcesFixture, [2]string{"@R1@", "@R2@"}, [2]string{"@R1@", "@R3@"})
+	out, stdout := runMerge(t, "merge-repositories", sourcesFixture, "R1", "R2", "R3")
+	assertSameFile(t, out, want)
+	if stdout != wantReport || !strings.Contains(stdout, "@R1@\t@R3@\tdropped\tNAME\t1 NAME Example Library\t1 NAME Example Archive\n") {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, wantReport)
+	}
+	pairs := writeTemp(t, "pairs.tsv", "R1\tR2\nR1\tR3\n")
+	out, stdout = runMerge(t, "merge-repositories", sourcesFixture, "--batch", pairs)
+	assertSameFile(t, out, want)
+	if stdout != wantReport {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, wantReport)
+	}
+}
+
+// TestMergePeopleAndFamiliesSeveral checks that merge-people and
+// merge-families take the same forms.
+func TestMergePeopleAndFamiliesSeveral(t *testing.T) {
+	people := writeTemp(t, "people.tsv", "I1\tI2\n")
+	want, wantReport := mergeOneByOne(t, "merge-people", mergeFixture, [2]string{"@I1@", "@I2@"})
+	out, stdout := runMerge(t, "merge-people", mergeFixture, "--batch", people)
+	assertSameFile(t, out, want)
+	if stdout != wantReport {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, wantReport)
+	}
+
+	families := writeTemp(t, "families.tsv", "F1\tF2\n")
+	want, wantReport = mergeOneByOne(t, "merge-families", out, [2]string{"@F1@", "@F2@"})
+	got, stdout := runMerge(t, "merge-families", out, "--batch", families)
+	assertSameFile(t, got, want)
+	if stdout != wantReport {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, wantReport)
+	}
+}
+
+// TestMergeManyInvalid checks that an invalid pair is reported by argument or
+// by line, and that nothing is written.
+func TestMergeManyInvalid(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.ged")
+	missing := writeTemp(t, "missing.tsv", "S1\tS2\nS1\tS99\n")
+	self := writeTemp(t, "self.tsv", "S1\tS2\n\nS3\t@S3@\n")
+	twice := writeTemp(t, "twice.tsv", "S1\tS2\nS3\tS2\n")
+	removed := writeTemp(t, "removed.tsv", "S1\tS2\nS2\tS3\n")
+	malformed := writeTemp(t, "malformed.tsv", "S1\tS2\nS3\n")
+	tests := []struct {
+		name string
+		args []string
+		code int
+		msg  string
+	}{
+		{"missing drop argument", []string{"S1", "S2", "S99"}, ExitError, "argument 4 (S99): no such record: @S99@"},
+		{"drop named twice", []string{"S1", "S2", "@S2@"}, ExitUsage, "argument 4 (@S2@): @S2@ was merged into @S1@ by argument 3 (S2)"},
+		{"keep among the drops", []string{"S1", "S2", "S1"}, ExitUsage, "argument 4 (S1): keep and drop are both @S1@"},
+		{"wrong type", []string{"S1", "S2", "R1"}, ExitError, "argument 4 (R1): @R1@ is a REPO record; want a source"},
+		{"missing row", []string{"--batch", missing}, ExitError, missing + " line 2: no such record: @S99@"},
+		{"self row", []string{"--batch", self}, ExitUsage, self + " line 3: keep and drop are both @S3@"},
+		{"drop twice", []string{"--batch", twice}, ExitUsage, twice + " line 2: @S2@ was merged into @S1@ by " + twice + " line 1"},
+		{"keep already dropped", []string{"--batch", removed}, ExitUsage, removed + " line 2: @S2@ was merged into @S1@ by " + removed + " line 1"},
+		{"malformed row", []string{"--batch", malformed}, ExitError, malformed + " line 2: want keep and drop, tab-separated"},
+		{"batch and pairs", []string{"--batch", missing, "S1", "S2"}, ExitUsage, "give <file> alone"},
+		{"missing batch", []string{"--batch", filepath.Join(dir, "none.tsv")}, ExitError, "none.tsv"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"merge-sources", sourcesFixture}, tt.args...)
+			code, stdout, stderr := run(t, append(args, "-o", out)...)
+			if code != tt.code || !strings.Contains(stderr, tt.msg) {
+				t.Errorf("exit = %d, want %d; stderr = %q, want %q", code, tt.code, stderr, tt.msg)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want nothing", stdout)
+			}
+			if _, err := os.Stat(out); err == nil {
+				t.Error("an output file was written")
+			}
+		})
+	}
+
+	// Every invalid pair is reported, not only the first.
+	code, _, stderr := run(t, "merge-sources", sourcesFixture, "S1", "S99", "S1", "-o", out)
+	if code != ExitError || !strings.Contains(stderr, "argument 3 (S99)") || !strings.Contains(stderr, "argument 4 (S1)") {
+		t.Errorf("exit = %d, stderr = %q", code, stderr)
 	}
 }

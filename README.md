@@ -549,6 +549,31 @@ as `dropped`, beside the kept one, and is not in the output. Other lines
 `conflict` when the kept record already held that tag with other lines.
 `--help` lists what each command carries. Run `validate` on the result.
 
+One run can merge many pairs, on all four merge commands. Name several drops
+after the keep, or give `--batch` a tab-separated file of pairs, one per
+line: keep, then drop. Blank lines and lines starting with `#` are skipped:
+
+```sh
+gedcom merge-sources family.ged @S1@ @S7@ @S9@ -o merged.ged
+gedcom merge-sources family.ged --batch pairs.tsv -o merged.ged
+```
+
+```text
+# pairs.tsv
+@S1@	@S7@
+@S2@	@S8@
+```
+
+The merges run in the order given, each on the result of the one before, so
+the output is the file the same pairs give merged one per run, each run on the
+last one's output. A record an earlier pair kept may be dropped by a later
+one. Every pair is checked first: one that names a missing record or one of
+another type, merges a record into itself, or names a record an earlier pair
+dropped is reported by argument or by line, and nothing is written. The
+report lists each pair's lines in turn, each starting with the pair's keep
+and drop; `--format json` gives an array of reports, one per pair. A single
+`<keep> <drop>` prints the report above, unlabeled.
+
 ### combine
 
 Joins files into one, in the order given, and writes it to a new file. No

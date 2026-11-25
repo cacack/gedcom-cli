@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/cacack/gedcom-go/v3/decoder"
 	"github.com/cacack/gedcom-go/v3/encoder"
@@ -168,4 +171,46 @@ func plural(n int, one, many string) string {
 		return "1 " + one
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// batchRow is one row of a --batch file: its tab-separated fields and the
+// line it is on.
+type batchRow struct {
+	line   int
+	fields []string
+}
+
+// readBatch reads the rows of a --batch file: tab-separated lines of
+// minFields to maxFields fields, the first minFields of them not empty; want names them for the error.
+// Blank lines and lines starting with # are skipped. Every malformed line is
+// reported, by line.
+func readBatch(name string, minFields, maxFields int, want string) ([]batchRow, error) {
+	f, err := os.Open(filepath.Clean(name))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var rows []batchRow
+	var errs []string
+	scanner := bufio.NewScanner(f)
+	for n := 1; scanner.Scan(); n++ {
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) < minFields || len(fields) > maxFields || slices.Contains(fields[:minFields], "") {
+			errs = append(errs, fmt.Sprintf("%s line %d: want %s, tab-separated", name, n, want))
+			continue
+		}
+		rows = append(rows, batchRow{line: n, fields: fields})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(errs) > 0 {
+		return nil, errors.New(strings.Join(errs, "\n"))
+	}
+	return rows, nil
 }

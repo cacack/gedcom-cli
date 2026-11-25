@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"mime"
-	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -142,36 +139,17 @@ Records not involved are written exactly as they were read.`,
 
 // readMediaBatch reads the rows of a --batch file.
 func readMediaBatch(name string) ([]mediaRow, error) {
-	f, err := os.Open(filepath.Clean(name))
+	batch, err := readBatch(name, 2, 3, "xref, path and an optional title")
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
-	var rows []mediaRow
-	var errs []string
-	scanner := bufio.NewScanner(f)
-	for n := 1; scanner.Scan(); n++ {
-		line := strings.TrimRight(scanner.Text(), "\r")
-		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		fields := strings.Split(line, "\t")
-		if len(fields) < 2 || len(fields) > 3 || fields[0] == "" || fields[1] == "" {
-			errs = append(errs, fmt.Sprintf("%s line %d: want xref, path and an optional title, tab-separated", name, n))
-			continue
-		}
-		row := mediaRow{line: n, to: fields[0], path: fields[1]}
-		if len(fields) == 3 {
-			row.title = fields[2]
+	rows := make([]mediaRow, 0, len(batch))
+	for _, b := range batch {
+		row := mediaRow{line: b.line, to: b.fields[0], path: b.fields[1]}
+		if len(b.fields) == 3 {
+			row.title = b.fields[2]
 		}
 		rows = append(rows, row)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	if len(errs) > 0 {
-		return nil, errors.New(strings.Join(errs, "\n"))
 	}
 	return rows, nil
 }

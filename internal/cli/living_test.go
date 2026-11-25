@@ -127,6 +127,9 @@ func TestRedactLiving(t *testing.T) {
 		{"validate", []string{"validate", "--min-severity", "info", living}, ExitError, []string{"INVALID_LEVEL\tLiving", "@I5@ line 46\tINVALID_DATE\tLiving"}},
 		{"merge-people", []string{"merge-people", living, "@I3@", "@I5@", "-o", out}, ExitOK, []string{"conflict\tBIRT\tLiving", "repointed\t@F2@\tFAM.CHIL"}},
 		{"merge-people json", []string{"merge-people", "--format", "json", living, "@I1@", "@I3@", "-o", out}, ExitOK, []string{"\"lines\": [\n        \"Living\""}},
+		// Each pair is redacted by its own records: Bob's lines show, Cleo's
+		// do not.
+		{"merge-people several", []string{"merge-people", living, "@I1@", "@I2@", "@I3@", "-o", out}, ExitOK, []string{"@I1@\t@I2@\tconflict\tNAME\t1 NAME Bob /Example/", "@I1@\t@I3@\tconflict\tBIRT\tLiving"}},
 		{"merge-families", []string{"merge-families", living, "@F1@", "@F2@", "-o", out}, ExitOK, []string{"conflict\tMARR\tLiving", "repointed\t@I5@\tINDI.FAMC"}},
 		// Source and repository records are not redacted; what the report
 		// says of the living people citing them is their xrefs.
