@@ -266,3 +266,17 @@ func TestPlacesApplyAgain(t *testing.T) {
 		t.Errorf("report = %+v", report)
 	}
 }
+
+// TestPlacesApplySkipsContinued checks that a PLAC continued on a CONC line is
+// not matched on its first line, so its key is reported unmatched.
+func TestPlacesApplySkipsContinued(t *testing.T) {
+	input := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n" +
+		"0 @I1@ INDI\n1 NAME Ada /Example/\n1 BIRT\n2 PLAC Springfield,\n3 CONC  IL\n0 TRLR\n"
+	in := writeTemp(t, "in.ged", input)
+	table := writeTemp(t, "table.tsv", "place\tstandard\tlatitude\tlongitude\nSpringfield,\tX\tN1.0\tW1.0\n")
+	report, got := applyPlacesJSON(t, in, table)
+	assertSameBytes(t, []byte(got), []byte(input))
+	if report.RecordsChanged != 0 || !reflect.DeepEqual(report.Unmatched, []string{"Springfield,"}) {
+		t.Errorf("report = %+v", report)
+	}
+}

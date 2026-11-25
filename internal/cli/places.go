@@ -89,7 +89,9 @@ Other columns are ignored, so a working list with notes can be passed as it
 is. Cells are not quoted. A place is matched byte for byte, as 'gedcom list
 plac' prints it: values that differ only in spacing or case are different
 places, and an @@ in a 5.x file stays @@. The standard name is written as
-given, and is not looked up in the table again. Empty lines are skipped.
+given, and is not looked up in the table again. Empty lines are skipped. A
+PLAC whose value is continued on CONC or CONT lines is left as written, since
+'gedcom list plac' shows only its first line.
 
 A row gives both coordinates or neither. A row with one only, a coordinate
 gedcom-go does not read as a latitude (N or S) or a longitude (E or W), an
@@ -288,7 +290,9 @@ func applyPlaces(doc *gedcom.Document, table placeTable) *placesReport {
 				continue
 			}
 			row, ok := table.rows[plac.Value]
-			if !ok {
+			// A value continued on CONC or CONT lines is more than its first
+			// line, so its first line alone is not the place.
+			if !ok || childTag(record, plac, "CONC") != nil || childTag(record, plac, "CONT") != nil {
 				continue
 			}
 			matched[plac.Value] = true

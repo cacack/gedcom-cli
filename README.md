@@ -389,13 +389,15 @@ gedcom places apply family.ged places.tsv -o out.ged
 ```text
 wrote out.ged: 5 PLAC rewritten, 3 MAP added, 1 MAP updated, 3 records changed
   no MAP permitted	line 48
+  no MAP permitted	line 51
   unmatched	Nowhere, Example County
 ```
 
 `MAP` is added only where the file's GEDCOM version permits one, as
 gedcom-go's grammar check reads it: not under a place of publication
 (`SOUR.PUBL.PLAC`), nor anywhere in a 5.5 file. Every other line is written as
-read, so running it again with the same table changes nothing.
+read, so running it again with the same table changes nothing. A `PLAC`
+continued on `CONC` or `CONT` lines is left as written.
 
 ### extract
 
