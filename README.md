@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `validate`, `duplicates`, `extract`, `put`, `delete`, `name`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -57,6 +57,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`extract`](#extract) | Write a branch of the tree to its own file |
 | [`put`](#put) | Replace records by xref, or add new ones, writing a new file |
 | [`delete`](#delete) | Remove records by xref, writing a new file |
+| [`name`](#name) | Edit one of a person's names: reorder it, set its TYPE, value or NICK |
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
@@ -451,6 +452,30 @@ references (1)
   @F1@	FAM.HUSB	@I2@
 ```
 
+### name
+
+Edits one of a person's names, addressed by its position among the person's
+`NAME` lines, counted from 1 in file order. It can move the name, with every
+line under it, to another position; set or clear its `TYPE` or `NICK`; and
+set its value, rewriting the `GIVN`, `SURN` and `NSFX` lines under it to the
+text before, between and after the slashes and removing a part left empty.
+Citations and notes under the name stay as they are:
+
+```sh
+gedcom name family.ged @I1@ 2 --move-to 1 --type birth -o fixed.ged
+```
+
+```text
+wrote fixed.ged: @I1@ name 2, now name 1
+  before	1 NAME Ada /Example/ | 2 SOUR @S1@
+  after	1 NAME Ada /Example/ | 2 TYPE birth | 2 SOUR @S1@
+```
+
+Which name is right is yours to say; the command infers nothing. The output
+is validated before it is written: an edit that adds a finding the input did
+not have, such as a `TYPE` GEDCOM 7.0 does not define, writes nothing and
+exits `1`.
+
 ### convert
 
 Rewrites a file as GEDCOM 5.5.1 or 7.0 with gedcom-go's converter, to a new
@@ -600,7 +625,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `delete`, `media add`, the merge commands and
+  too: `put`, `delete`, `name`, `media add`, the merge commands and
   `convert` edit or rewrite the whole tree and write it unredacted. Source,
   media, repository and submitter records are not redacted, even when a
   hidden record cites them, and neither is the header (`get HEAD`):

@@ -46,6 +46,10 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
 	"extract": extractEveryone,
+	// Moving a name to where it is changes nothing.
+	"name": func(_ *testing.T, in, out string) []string {
+		return []string{"name", in, "@I1@", "1", "--move-to", "1", "-o", out}
+	},
 	// put with an unedited copy of every record, as get prints them.
 	"put": func(t *testing.T, in, out string) []string {
 		fragment := filepath.Join(t.TempDir(), "records.ged")
