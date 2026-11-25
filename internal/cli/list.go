@@ -13,16 +13,18 @@ import (
 )
 
 // listTypes are the types list accepts, as the user writes them: the record
-// types, plac for the distinct places, tags for the tag paths and values for
-// the distinct values of one tag path.
-var listTypes = []string{"indi", "fam", "sour", "repo", "obje", "subm", "note", "snote", "plac", "tags", "values"}
+// types, names for the individuals' NAME lines, plac for the distinct places,
+// tags for the tag paths and values for the distinct values of one tag path.
+var listTypes = []string{"indi", "fam", "sour", "repo", "obje", "subm", "note", "snote", "names", "plac", "tags", "values"}
 
 // listOptions are list's flags beyond --format: limit for every type, vendor
-// for tags, and path, the --tag of values split at its dots.
+// for tags, path, the --tag of values split at its dots, and repeated for
+// names.
 type listOptions struct {
-	limit  int
-	vendor bool
-	path   []string
+	limit    int
+	vendor   bool
+	path     []string
+	repeated bool
 }
 
 // row is one listed record, place, tag path or value. Its JSON form is the
@@ -76,6 +78,23 @@ type noteRow struct {
 	Text string `json:"text"`
 }
 
+// nameRow is one NAME line of an individual. Position counts the person's
+// names from 1, in file order. The parts are the values of the lines under
+// the NAME, as written. SameAs is the position of the person's first earlier
+// name that nameKey makes equal to this one, or 0.
+type nameRow struct {
+	XRef      string `json:"xref"`
+	Position  int    `json:"position"`
+	Value     string `json:"value"`
+	Given     string `json:"givn"`
+	Surname   string `json:"surn"`
+	Suffix    string `json:"nsfx"`
+	Nickname  string `json:"nick"`
+	Type      string `json:"type"`
+	Citations int    `json:"citations"`
+	SameAs    int    `json:"same_as"`
+}
+
 // placRow is one distinct PLAC value. The coordinates are those of the MAP
 // under a use of it, as written in the file; they are in JSON only.
 type placRow struct {
@@ -103,6 +122,10 @@ func (r indiRow) fields() []string {
 func (r famRow) fields() []string {
 	return []string{r.XRef, r.Husband, r.Wife, r.Marriage, strconv.Itoa(r.Children)}
 }
+func (r nameRow) fields() []string {
+	return []string{r.XRef, strconv.Itoa(r.Position), r.Value, r.Given, r.Surname, r.Suffix, r.Nickname, r.Type,
+		strconv.Itoa(r.Citations), strconv.Itoa(r.SameAs)}
+}
 func (r sourRow) fields() []string  { return []string{r.XRef, r.Title, r.Author} }
 func (r repoRow) fields() []string  { return []string{r.XRef, r.Name} }
 func (r objeRow) fields() []string  { return []string{r.XRef, r.Title, r.File, r.Format} }
@@ -115,9 +138,10 @@ func (r valueRow) fields() []string { return []string{strconv.Itoa(r.Count), r.V
 func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <file> <type>",
-		Short: "List the records of one type (indi, fam, sour, repo, obje, subm, note, snote), the places (plac), the tag paths (tags) or one tag's values (values), one per line",
-		Long: `List the records of one type, one per line, in file order; or, for plac,
-tags and values, the distinct places, tag paths or values of one tag path in
+		Short: "List the records of one type (indi, fam, sour, repo, obje, subm, note, snote), the people's names (names), the places (plac), the tag paths (tags) or one tag's values (values), one per line",
+		Long: `List the records of one type, one per line, in file order; or, for names,
+each NAME line of each individual, in file order; or, for plac, tags and
+values, the distinct places, tag paths or values of one tag path in
 the file, most used first.
 
 Text output is tab-separated with no header. The fields, which are also the
@@ -131,6 +155,8 @@ JSON keys, are:
   subm   xref, name
   note   xref, text (shared NOTE records, GEDCOM 5.x)
   snote  xref, text (shared SNOTE records, GEDCOM 7.0)
+  names  xref, position, value, givn, surn, nsfx, nick, type, citations,
+         same_as
   plac   count, place (JSON adds latitude and longitude)
   tags   count, path
   values count, value (of the tag path --tag names)
@@ -146,6 +172,19 @@ tab) are printed as spaces; JSON keeps the value as it is.
 For obje, title and format are those of the first FILE. A record that puts
 TITL and FORM beside FILE instead of under it (the GEDCOM 5.5 layout) lists
 them empty; 'gedcom get' shows the whole record.
+
+For names, each NAME line of an individual is a row, so a person with three
+names has three rows, in file order. position is the name's place among the
+person's names, from 1. value is the NAME value; givn, surn, nsfx, nick and
+type are the values of the GIVN, SURN, NSFX, NICK and TYPE lines under it,
+as written, and empty when the line is absent (the first, if repeated).
+citations is the number of SOUR lines under it. same_as is the position of
+the person's first earlier name equal to this one, or 0: two names are equal
+when their values match after ignoring case and removing every space and
+punctuation character (the surname slashes, commas and periods among them),
+so "John /Smith/ Jr." equals "john smith jr". --repeated lists only the names
+with a same_as, the names to fold into an earlier one; on a file with none it
+prints nothing. A person --redact-living hides has one name, Living.
 
 For plac, each distinct PLAC value in the file's records is listed once,
 exactly as written, with how many times it is used: values that differ only
@@ -182,6 +221,8 @@ their children, more than --living-years before --reference-year. A person
 with no dates at all is presumed living.`,
 		Example: `  gedcom list family.ged indi
   gedcom list --limit 20 family.ged fam
+  gedcom list family.ged names
+  gedcom list --repeated family.ged names
   gedcom list family.ged plac
   gedcom list --vendor family.ged tags
   gedcom list --tag INDI.EVEN.TYPE family.ged values
@@ -211,6 +252,12 @@ with no dates at all is presumed living.`,
 			if opts.vendor && kind != "tags" {
 				return usageError{fmt.Errorf("--vendor applies only to tags, not %s", kind)}
 			}
+			if opts.repeated, err = cmd.Flags().GetBool("repeated"); err != nil {
+				return err
+			}
+			if opts.repeated && kind != "names" {
+				return usageError{fmt.Errorf("--repeated applies only to names, not %s", kind)}
+			}
 			tag, err := cmd.Flags().GetString("tag")
 			if err != nil {
 				return err
@@ -239,6 +286,7 @@ with no dates at all is presumed living.`,
 	}
 	cmd.Flags().Int("limit", 0, "print at most this many rows; 0 means no limit")
 	cmd.Flags().Bool("vendor", false, "for tags, list only the paths with an extension tag (starting with _)")
+	cmd.Flags().Bool("repeated", false, "for names, list only the names equal to an earlier name of the same person")
 	cmd.Flags().String("tag", "", "for values, the tag path whose values to list, such as INDI.SEX")
 	return cmd
 }
@@ -262,6 +310,8 @@ func listRows(doc *gedcom.Document, living map[*gedcom.Individual]bool, kind str
 		return rowsOf(doc.Notes(), limit, newNoteRow)
 	case "snote":
 		return rowsOf(doc.SharedNotes(), limit, newSharedNoteRow)
+	case "names":
+		return nameRows(doc, opts.repeated, limit)
 	case "plac":
 		return placeRows(doc, limit)
 	case "tags":
@@ -284,6 +334,63 @@ func rowsOf[T any](entities []T, limit int, toRow func(T) row) []row {
 		rows = append(rows, toRow(entity))
 	}
 	return rows
+}
+
+// nameRows lists each NAME line of each individual in doc, in file order, and
+// returns at most limit of them; a limit of 0 means all of them. With
+// repeated, only the names with a same_as are listed. The value and citations
+// are gedcom-go's; the parts are read from the lines under the NAME, because
+// the library fills a missing GIVN, SURN or NSFX from the value.
+func nameRows(doc *gedcom.Document, repeated bool, limit int) []row {
+	var rows []row
+	for _, record := range doc.Records {
+		ind, ok := record.GetIndividual()
+		if !ok {
+			continue
+		}
+		lines := record.FindAll("NAME")
+		keys := make([]string, len(ind.Names))
+		for i, name := range ind.Names {
+			if name == nil {
+				continue
+			}
+			keys[i] = nameKey(name.Full)
+			r := nameRow{XRef: ind.XRef, Position: i + 1, Value: name.Full, Citations: len(name.SourceCitations),
+				SameAs: slices.Index(keys[:i], keys[i]) + 1}
+			if repeated && r.SameAs == 0 {
+				continue
+			}
+			// A redacted record has no lines, so its name has no parts.
+			if len(lines) == len(ind.Names) {
+				r.Given, r.Surname, r.Suffix = namePart(record, lines[i], "GIVN"), namePart(record, lines[i], "SURN"), namePart(record, lines[i], "NSFX")
+				r.Nickname, r.Type = namePart(record, lines[i], "NICK"), namePart(record, lines[i], "TYPE")
+			}
+			rows = append(rows, r)
+		}
+	}
+	return rowsOf(rows, limit, func(r row) row { return r })
+}
+
+// namePart is the value of the first line tagged tag directly under name, a
+// NAME line of record, or "" when it has none.
+func namePart(record *gedcom.Record, name *gedcom.Tag, tag string) string {
+	for _, line := range record.Subtree(name) {
+		if line != nil && line.Level == name.Level+1 && line.Tag == tag {
+			return line.Value
+		}
+	}
+	return ""
+}
+
+// nameKey is a name value as names compare for same_as: in lower case, with
+// every space and punctuation character removed.
+func nameKey(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, value)
 }
 
 // placeRows counts the uses of each distinct PLAC value in doc's records and

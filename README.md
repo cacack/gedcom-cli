@@ -45,7 +45,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
 | [`get`](#get) | Print records by xref, or the header |
-| [`list`](#list) | List the records of one type, or the places, tag paths or one tag's values, one per line |
+| [`list`](#list) | List the records of one type, or the people's names, the places, tag paths or one tag's values, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
 | [`relatives`](#relatives) | Print people with their parents, siblings, spouses and children |
@@ -134,6 +134,27 @@ people by surname:
 ```sh
 gedcom list --format json family.ged indi | jq '.[] | select(.living | not)'
 gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
+```
+
+`list <file> names` lists each `NAME` line of each individual, one per row in
+file order, so a person's later names show too: xref, the name's position
+among the person's names, the value, the `GIVN`, `SURN`, `NSFX`, `NICK` and
+`TYPE` under it as written (empty when absent), the number of citations under
+it, and `same_as`, the position of the person's first earlier name equal to
+this one (0 if none). Two names are equal when their values match after
+ignoring case and removing spaces and punctuation, so `John /Smith/ Jr.`
+equals `john smith jr`. `--repeated` keeps only the names with a `same_as`,
+the repeats to fold:
+
+```sh
+gedcom list family.ged names
+gedcom list --repeated family.ged names
+```
+
+```text
+@I1@	1	John /Smith/ Jr.	John	Smith	Jr.			1	0
+@I1@	2	john smith, jr						2	1
+@I1@	3	Jack /Smith/				Jack	aka	0	0
 ```
 
 `list <file> plac` lists places instead of records: each distinct `PLAC`

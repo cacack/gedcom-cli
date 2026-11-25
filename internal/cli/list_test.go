@@ -534,6 +534,99 @@ func TestListValues(t *testing.T) {
 	}
 }
 
+// named is a file whose first person has three names: the second repeats the
+// first but for case, spacing and punctuation and carries other citations,
+// the third differs. Its second person has one name.
+const named = "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+	"0 @S1@ SOUR\n1 TITL Example register\n" +
+	"0 @I1@ INDI\n" +
+	"1 NAME John /Sample/ Jr.\n2 GIVN John\n2 SURN Sample\n2 NSFX Jr.\n2 SOUR @S1@\n3 PAGE 1\n" +
+	"1 NAME john  sample, jr\n2 SOUR @S1@\n3 PAGE 2\n2 SOUR @S1@\n3 PAGE 3\n" +
+	"1 NAME Jack /Sample/\n2 NICK Jack\n2 TYPE aka\n" +
+	"1 SEX M\n" +
+	"0 @I2@ INDI\n1 NAME Ann /Sample/\n2 GIVN Anne\n1 SEX F\n" +
+	"0 TRLR\n"
+
+func TestListNames(t *testing.T) {
+	path := writeTemp(t, "named.ged", named)
+	// One row per NAME, in file order; an absent part is empty, not taken
+	// from the value.
+	const want = "@I1@\t1\tJohn /Sample/ Jr.\tJohn\tSample\tJr.\t\t\t1\t0\n" +
+		"@I1@\t2\tjohn  sample, jr\t\t\t\t\t\t2\t1\n" +
+		"@I1@\t3\tJack /Sample/\t\t\t\tJack\taka\t0\t0\n" +
+		"@I2@\t1\tAnn /Sample/\tAnne\t\t\t\t\t0\t0\n"
+	code, stdout, stderr := run(t, "list", path, "names")
+	if code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout:\n%s\nwant:\n%s", code, stderr, stdout, want)
+	}
+
+	code, stdout, stderr = run(t, "list", "--format", "json", "--limit", "3", path, "names")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	name := func(position float64, value, givn, surn, nsfx, nick, typ string, citations, sameAs float64) map[string]any {
+		return map[string]any{"xref": "@I1@", "position": position, "value": value, "givn": givn, "surn": surn,
+			"nsfx": nsfx, "nick": nick, "type": typ, "citations": citations, "same_as": sameAs}
+	}
+	wantJSON := []map[string]any{
+		name(1, "John /Sample/ Jr.", "John", "Sample", "Jr.", "", "", 1, 0),
+		name(2, "john  sample, jr", "", "", "", "", "", 2, 1),
+		name(3, "Jack /Sample/", "", "", "", "Jack", "aka", 0, 0),
+	}
+	if !reflect.DeepEqual(got, wantJSON) {
+		t.Errorf("json: got %v, want %v", got, wantJSON)
+	}
+}
+
+func TestListNamesEmptyValue(t *testing.T) {
+	// A NAME with no value is still a row, and the parts stay with their own
+	// NAME line.
+	path := writeTemp(t, "empty.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n"+
+		"0 @I1@ INDI\n1 NAME\n2 GIVN Ann\n1 NAME Bob /Sample/\n2 SURN Sample\n0 TRLR\n")
+	const want = "@I1@\t1\t\tAnn\t\t\t\t\t0\t0\n@I1@\t2\tBob /Sample/\t\tSample\t\t\t\t0\t0\n"
+	code, stdout, stderr := run(t, "list", path, "names")
+	if code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+}
+
+func TestListNamesRepeated(t *testing.T) {
+	path := writeTemp(t, "named.ged", named)
+	code, stdout, stderr := run(t, "list", "--repeated", path, "names")
+	if want := "@I1@\t2\tjohn  sample, jr\t\t\t\t\t\t2\t1\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+	// A file with no repeated name reports nothing.
+	for _, format := range []string{"text", "json"} {
+		code, stdout, stderr = run(t, "list", "--repeated", "--format", format, records, "names")
+		want := ""
+		if format == "json" {
+			want = "[]\n"
+		}
+		if code != ExitOK || stderr != "" || stdout != want {
+			t.Errorf("%s, none: exit = %d, stderr = %q, stdout = %q, want %q", format, code, stderr, stdout, want)
+		}
+	}
+}
+
+func TestListNamesRedactLiving(t *testing.T) {
+	// Both people in named have no dates, so both are presumed living: each
+	// lists one name, Living, and no name is repeated.
+	path := writeTemp(t, "named.ged", named)
+	code, stdout, stderr := run(t, "list", "--redact-living", path, "names")
+	if want := "@I1@\t1\tLiving\t\t\t\t\t\t0\t0\n@I2@\t1\tLiving\t\t\t\t\t\t0\t0\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+	code, stdout, stderr = run(t, "list", "--redact-living", "--repeated", path, "names")
+	if code != ExitOK || stderr != "" || stdout != "" {
+		t.Errorf("repeated: exit = %d, stderr = %q, stdout = %q, want nothing", code, stderr, stdout)
+	}
+}
+
 func TestListUnknownType(t *testing.T) {
 	code, stdout, stderr := run(t, "list", records, "people")
 	if code != ExitUsage {
@@ -569,6 +662,7 @@ func TestListExitCodes(t *testing.T) {
 		{"--tag with an empty tag", []string{"list", "--tag", "INDI..DATE", records, "values"}, ExitUsage},
 		{"--tag on another type", []string{"list", "--tag", "INDI.SEX", records, "tags"}, ExitUsage},
 		{"--vendor on another type", []string{"list", "--vendor", records, "plac"}, ExitUsage},
+		{"--repeated on another type", []string{"list", "--repeated", records, "indi"}, ExitUsage},
 		{"missing file for tags", []string{"list", "testdata/does-not-exist.ged", "tags"}, ExitError},
 	}
 	for _, tt := range tests {
@@ -590,7 +684,8 @@ func TestListHelpHasExample(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
 	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac   count, place",
-		"subm   xref, name", "snote  xref, text", "tags   count, path", "values count, value", "but SUBN"} {
+		"subm   xref, name", "snote  xref, text", "tags   count, path", "values count, value", "but SUBN",
+		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", "ignoring case and removing every space and\npunctuation character", "gedcom list --repeated family.ged names"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}
