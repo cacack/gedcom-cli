@@ -180,7 +180,7 @@ type are the values of the GIVN, SURN, NSFX, NICK and TYPE lines under it,
 as written, and empty when the line is absent (the first, if repeated).
 citations is the number of SOUR lines under it. same_as is the position of
 the person's first earlier name equal to this one, or 0: two names are equal
-when their values are after ignoring case and removing every space and
+when their values match after ignoring case and removing every space and
 punctuation character (the surname slashes, commas and periods among them),
 so "John /Smith/ Jr." equals "john smith jr". --repeated lists only the names
 with a same_as, the names to fold into an earlier one; on a file with none it

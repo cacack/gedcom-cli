@@ -138,7 +138,7 @@ file order, so a person's later names show too: xref, the name's position
 among the person's names, the value, the `GIVN`, `SURN`, `NSFX`, `NICK` and
 `TYPE` under it as written (empty when absent), the number of citations under
 it, and `same_as`, the position of the person's first earlier name equal to
-this one (0 if none). Two names are equal when their values are after
+this one (0 if none). Two names are equal when their values match after
 ignoring case and removing spaces and punctuation, so `John /Smith/ Jr.`
 equals `john smith jr`. `--repeated` keeps only the names with a `same_as`,
 the repeats to fold:

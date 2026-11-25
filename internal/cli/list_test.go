@@ -582,6 +582,18 @@ func TestListNames(t *testing.T) {
 	}
 }
 
+func TestListNamesEmptyValue(t *testing.T) {
+	// A NAME with no value is still a row, and the parts stay with their own
+	// NAME line.
+	path := writeTemp(t, "empty.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n"+
+		"0 @I1@ INDI\n1 NAME\n2 GIVN Ann\n1 NAME Bob /Sample/\n2 SURN Sample\n0 TRLR\n")
+	const want = "@I1@\t1\t\tAnn\t\t\t\t\t0\t0\n@I1@\t2\tBob /Sample/\t\tSample\t\t\t\t0\t0\n"
+	code, stdout, stderr := run(t, "list", path, "names")
+	if code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+}
+
 func TestListNamesRepeated(t *testing.T) {
 	path := writeTemp(t, "named.ged", named)
 	code, stdout, stderr := run(t, "list", "--repeated", path, "names")
