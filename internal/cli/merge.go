@@ -118,16 +118,9 @@ exactly as they were read.
 With --fold-events, a substructure of drop that records the same event as
 one of keep's is folded into it instead of moved beside it: keep's lines
 stay, and each line of drop's that keep's lacks (a citation, a note, a place
-keep's has none of) is added. Two substructures record the same event, as
-gedcom-go decides it, when they have the same tag and value, each has
-exactly one DATE and at most one PLAC and one TYPE, and:
+keep's has none of) is added.
 
-  - the dates parse to the same date: "7 DEC 1977" and "07 Dec 1977" are
-    the same, "ABT 1977" and "1977" are not; a date that does not parse, is
-    invalid ("32 DEC 1977") or is a phrase is the same as none
-  - a TIME or PHRASE under both DATEs is equal
-  - the places are equal, or only one has a place
-  - the TYPEs are equal, or neither has one
+` + sameEventHelp + `
 
 Events that differ in any of these are moved and reported as conflicts:
 choosing between them is yours.
@@ -266,6 +259,20 @@ Run 'gedcom validate' on the output to check the result.`,
   gedcom merge-repositories --format json family.ged R1 R2 -o merged.ged`,
 	})
 }
+
+// sameEventHelp is the rule for two substructures that record the same
+// event, which gedcom-go applies: --fold-events folds by it, and
+// repeated-events reports and folds by it.
+const sameEventHelp = `Two substructures record the same event, as gedcom-go decides it, when they
+have the same tag and value, each has exactly one DATE and at most one PLAC
+and one TYPE, and:
+
+  - the dates parse to the same date: "7 DEC 1977" and "07 Dec 1977" are
+    the same, "ABT 1977" and "1977" are not; a date that does not parse, is
+    invalid ("32 DEC 1977") or is a phrase is the same as none
+  - a TIME or PHRASE under both DATEs is equal
+  - the places are equal, or only one has a place
+  - the TYPEs are equal, or neither has one`
 
 // mergeManyHelp is the merge commands' help on merging several pairs in one
 // run.

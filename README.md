@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `repeated-events`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -64,6 +64,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
+| [`repeated-events`](#repeated-events) | Report events a record holds twice, and fold them into one, writing a new file |
 | [`merge-sources`](#merge-sources-and-merge-repositories) | Fold one source into another, writing a new file |
 | [`merge-repositories`](#merge-sources-and-merge-repositories) | Fold one repository into another, writing a new file |
 | [`combine`](#combine) | Join files into one, writing a new file |
@@ -655,6 +656,32 @@ is reported as `folded`, with the dropped event's lines and the kept event's
 once every fold into it is done. Events that differ in date stay separate and are reported as
 conflicts. `--help` gives the full rule.
 
+### repeated-events
+
+Reports the events one individual or family already holds twice: what a
+file is left with by merges made without `--fold-events`, or by an import.
+Two events are the same by the rule `--fold-events` folds by, which
+`gedcom repeated-events --help` and `gedcom merge-people --help` both give;
+an event with no `DATE` (a residence with only an address) is never
+reported. `--fold` folds each group into its first event, as `--fold-events`
+does, and writes the result to a new file:
+
+```sh
+gedcom repeated-events family.ged
+gedcom repeated-events family.ged @I1@ @F2@
+gedcom repeated-events --fold family.ged -o folded.ged
+```
+
+```text
+repeated	@I1@	BIRT	1 BIRT | 2 DATE 7 DEC 1977	1 BIRT | 2 DATE 07 Dec 1977 | 2 SOUR @S1@
+repeated	@F1@	MARR	1 MARR | 2 DATE 12 JUN 2000 | 2 PLAC Exampletown	1 MARR | 2 DATE 12 JUN 2000
+```
+
+With `--fold`, the report lists each event removed as `folded`, with the
+record, its lines and those of the event it was folded into, as
+`merge-people` does. Records with nothing to fold are written as read, and
+folding the output again folds nothing.
+
 ### merge-sources and merge-repositories
 
 `merge-sources` folds one source record into another: a file combined from
@@ -784,7 +811,7 @@ These hold for every command, so scripts and agents can rely on them:
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
   too: `put`, `put-header`, `delete`, `name`, `retag`, `media add`, `places apply`,
-  the merge commands and `convert` edit or rewrite the whole tree and write
+  the merge commands, `repeated-events` and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header
   (`get HEAD`): check their titles, file names and addresses yourself. Use it before pasting
