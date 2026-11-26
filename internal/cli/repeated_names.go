@@ -40,7 +40,7 @@ list --repeated <file> names' lists the names whose values alone are equal;
 'gedcom validate --style NAME_PART_MISMATCH <file>' reports a GIVN or SURN
 that disagrees with its NAME value.
 
-` + repeatedReportHelp("the NAMEs of one individual that are the same\n                          name", "a citation, a note, a name piece") + `
+` + repeatedReportHelp("the NAMEs of one individual that are the same\nname", "a citation, a note, a name piece") + `
 
 A NAME's lines are joined with " | ". With --redact-living, those of a
 presumed-living person read Living; the file written is not redacted.

@@ -696,7 +696,7 @@ func TestListHelpHasExample(t *testing.T) {
 	}
 	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac   count, place",
 		"subm   xref, name", "snote  xref, text", "tags   count, path", "values count, value", "but SUBN",
-		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", "same\nwords in the same order, case ignored", "repeated-names", "NAME_PART_MISMATCH", "gedcom list --repeated family.ged names"} {
+		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", samePersonalNameHelp, "repeated-names", "NAME_PART_MISMATCH", "gedcom list --repeated family.ged names"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}

@@ -64,7 +64,7 @@ The rule is the one merge-people --fold-events folds by:
 
 ` + sameEventHelp + `
 
-` + repeatedReportHelp("the substructures of one record that record the\n                          same event", "a citation, a note, a place") + `
+` + repeatedReportHelp("the substructures of one record that record the\nsame event", "a citation, a note, a place") + `
 
 A substructure's lines are joined with " | ". With --redact-living, those of
 a presumed-living person, and of a family with one as a spouse, read Living;
@@ -90,12 +90,15 @@ the file written is not redacted.
 
 // repeatedReportHelp is the help on the report and on --fold that
 // repeated-events and repeated-names share; group is what one group is, as
-// the report lists it, and lacks the lines a first member may gain.
+// the report lists it, one "\n" per wrapped line, and lacks the lines a first
+// member may gain.
 func repeatedReportHelp(group, lacks string) string {
+	const indent = "                          " // the column of "xref" above
+	group = strings.ReplaceAll(group, "\n", "\n"+indent)
 	return `The report lists one group per line, tab-separated:
 
   repeated  xref, tag, lines...
-                          ` + group + `, in file order, each as its lines
+` + indent + group + `, in file order, each as its lines
 
 With --fold, each group is folded into its first member: the first member's
 lines stay, and each line of the others it lacks is added (` + lacks + `),

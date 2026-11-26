@@ -167,7 +167,7 @@ func TestRepeatedNamesHelp(t *testing.T) {
 		t.Fatalf("exit = %d", code)
 	}
 	for _, want := range []string{"repeated  xref, tag, lines...", "folded    xref, tag, lines, into",
-		"words in the same order, case ignored", "NAME_PART_MISMATCH", "list --repeated"} {
+		samePersonalNameHelp, "NAME_PART_MISMATCH", "list --repeated"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q", want)
 		}
