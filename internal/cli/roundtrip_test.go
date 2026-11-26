@@ -59,6 +59,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		}
 		return []string{"places", "apply", in, table, "-o", out}
 	},
+	// A table with no rows requests no change.
+	"move-value": func(t *testing.T, in, out string) []string {
+		table := filepath.Join(filepath.Dir(out), "moves.tsv")
+		if err := os.WriteFile(table, []byte("path\tvalue\taction\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"move-value", in, table, "-o", out}
+	},
 	// A path no line is at requests no change.
 	"retag": func(_ *testing.T, in, out string) []string {
 		return []string{"retag", in, "INDI._NONE", "EVEN", "-o", out}

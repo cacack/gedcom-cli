@@ -61,6 +61,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`delete`](#delete) | Remove records by xref, writing a new file |
 | [`name`](#name) | Edit one of a person's names: reorder it, set its TYPE, value or NICK |
 | [`retag`](#retag) | Give every line at one tag path a new tag, writing a new file |
+| [`move-value`](#move-value) | Move event lines' values into their `PLAC`, `ADDR` or a `NOTE` from a table, writing a new file |
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
@@ -617,6 +618,37 @@ written, as `name` does: an edit that adds a finding the input did not have,
 such as an `EXID` under a citation, where GEDCOM 7.0 permits none, writes
 nothing and exits `1`. A path no line is at writes the file byte-identical.
 
+### move-value
+
+Moves a value written on the wrong line of an event to the line it belongs
+on, as a table says: an `ADDR` that is a building's name to the head of the
+`PLAC`, a `PLAC` that is a street address to `ADDR`, or a `PLAC` that is
+neither to a `NOTE` that keeps the words. The table is tab-separated with a
+header row: `path` (a tag path as `list <file> tags` prints it, or `*.PLAC`
+for a `PLAC` under any event), `value` (the whole value, matched byte for
+byte), `action` (`prepend PLAC`, `to ADDR`, `to PLAC` or `to NOTE`) and, for
+`to NOTE`, a `prefix`:
+
+```sh
+gedcom move-value family.ged moves.tsv -o out.ged
+```
+
+```text
+wrote out.ged: 4 lines moved, 1 MAP removed, 3 records changed
+  row 2	INDI.BIRT.ADDR	Example General Hospital	prepend PLAC	1 moved, 1 MAP removed, 1 record changed
+  row 3	*.PLAC	at home	to NOTE	3 moved, 0 MAP removed, 3 records changed
+  unmatched	row 4	*.ADDR	Nowhere
+```
+
+`prepend PLAC` removes the `MAP` under that `PLAC`, since its point was the
+old place's. A line the action cannot be applied to is reported with its
+record and line, and nothing is written: `to ADDR` or `to PLAC` on an event
+that has one already, `prepend PLAC` on an event with no `PLAC`, or a line
+with substructures no action accounts for. The command decides nothing:
+which values are building names is the table's to say. The output is
+validated before it is written, as `retag` does, and a table with no rows
+writes the file byte-identical.
+
 ### convert
 
 Rewrites a file as GEDCOM 5.5.1 or 7.0 with gedcom-go's converter, to a new
@@ -861,7 +893,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `put-header`, `delete`, `name`, `retag`, `media add`, `places apply`,
+  too: `put`, `put-header`, `delete`, `name`, `retag`, `move-value`, `media add`, `places apply`,
   the merge commands, `repeated-events`, `repeated-names` and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header

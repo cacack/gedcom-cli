@@ -1,0 +1,46 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Ann /Example/
+1 BIRT
+2 DATE 7 DEC 1977
+2 PLAC Springfield, Example, Ohio, USA
+3 MAP
+4 LATI N39.9242
+4 LONG W83.8088
+2 ADDR Example General Hospital
+1 RESI
+2 PLAC at home
+1 DEAT
+2 PLAC 12 Example Street
+2 ADDR Example Hospice
+1 BURI
+2 ADDR Example Chapel
+1 CENS
+2 PLAC Unknown
+3 MAP
+4 LATI N1.0
+4 LONG W1.0
+1 EVEN
+2 TYPE Note
+2 ADDR at the
+3 CONT old mill
+1 GRAD
+2 ADDR Example Sch
+3 CONC ool
+0 @I2@ INDI
+1 NAME Bob /Example/
+1 RESI
+2 PLAC at home
+2 ADDR Example Hall
+3 CITY Springfield
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 PLAC at home
+0 TRLR

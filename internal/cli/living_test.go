@@ -166,6 +166,8 @@ func TestRedactLiving(t *testing.T) {
 		// retag reports counts; a finding the edit adds about Cleo is hidden.
 		{"retag", []string{"retag", living, "INDI.RESI", "PROP", "-o", out}, ExitOK, []string{"1 line INDI.RESI renamed PROP"}},
 		{"retag findings", []string{"retag", living, "INDI.RESI.ADDR", "HUSB", "-o", out}, ExitError, []string{"UNEXPECTED_SUBSTRUCTURE\tLiving"}},
+		// move-value hides the value of a row that matched Cleo's address.
+		{"move-value", []string{"move-value", living, livingMoves(t), "-o", out}, ExitOK, []string{"1 line moved", "row 2\tINDI.RESI.ADDR\tLiving\tto PLAC\t", "unmatched\trow 3\t*.PLAC\tNowhere"}},
 		// Cleo's (@I3@) repeated birth is hidden; Ann's (@I1@) repeated death is not.
 		{"repeated-events", []string{"repeated-events", livingWithRepeats(t)}, ExitOK, []string{"repeated\t@I3@\tBIRT\tLiving\tLiving\n", "repeated\t@I1@\tDEAT\t1 DEAT | 2 DATE 9 OCT 1979\t"}},
 		{"repeated-events fold", []string{"repeated-events", "--fold", livingWithRepeats(t), "-o", out}, ExitOK, []string{"folded\t@I3@\tBIRT\tLiving\tLiving\n", "folded\t@I1@\tDEAT\t1 DEAT | 2 DATE 09 Oct 1979"}},
@@ -323,6 +325,13 @@ func livingPlaces(t *testing.T) string {
 	return writeTemp(t, "places.tsv", "place\tstandard\nOldtown, Example County\tOldtown\nHiddenvale, Example County\tHiddenvale\n")
 }
 
+// livingMoves is a move-value table for the living fixture that moves
+// Cleo's address to her residence's PLAC, with a row that matches nothing.
+func livingMoves(t *testing.T) string {
+	t.Helper()
+	return writeTemp(t, "moves.tsv", "path\tvalue\taction\nINDI.RESI.ADDR\t12 Secret Lane\tto PLAC\n*.PLAC\tNowhere\tto NOTE\n")
+}
+
 // TestRedactLivingWholeFiles checks the README's rule for the files written
 // with --redact-living: extract and combine redact theirs (TestRedactLiving
 // and TestCombineRedactLiving), and every other write command writes the
@@ -336,6 +345,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"delete", "--force", living, "@I5@"},
 		{"name", living, "@I3@", "1", "--type", "birth"},
 		{"retag", living, "INDI.RESI", "PROP"},
+		{"move-value", living, livingMoves(t)},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
 		{"places", "apply", living, livingPlaces(t)},
 		{"merge-people", living, "@I3@", "@I5@"},
