@@ -156,7 +156,7 @@ func TestRedactLiving(t *testing.T) {
 		{"descendants", []string{"descendants", living, "@I1@"}, ExitOK, []string{"1\t@I3@\tLiving", "2\t@I5@\tLiving"}},
 		{"relatives", []string{"relatives", living, "@I3@"}, ExitOK, []string{"self\t\t@I3@\tLiving", "child\t@F2@\t@I5@\tLiving", "Bob /Example/"}},
 		{"duplicates", []string{"duplicates", living, living}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
-		// put, delete and media add report xrefs only.
+		// put, delete, media add and media set report xrefs only.
 		{"put", []string{"put", living, esme, "-o", out}, ExitOK, []string{"replaced\t@I5@"}},
 		// put-header reports the header only, which is never redacted.
 		{"put-header", []string{"put-header", living, header, "-o", out}, ExitOK, []string{"header replaced"}},
@@ -177,6 +177,8 @@ func TestRedactLiving(t *testing.T) {
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
+		// The fixture has no OBJE record to set, so an empty batch.
+		{"media set", []string{"media", "set", living, "--batch", writeTemp(t, "files.tsv", ""), "-o", out}, ExitOK, nil},
 		// places apply reports counts and the table's unmatched places only.
 		{"places apply", []string{"places", "apply", living, livingPlaces(t), "-o", out}, ExitOK, []string{"3 PLAC rewritten", "3 records changed"}},
 		// The decode finding is on Dirk's line, the note is Cleo's and the
@@ -347,6 +349,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"retag", living, "INDI.RESI", "PROP"},
 		{"move-value", living, livingMoves(t)},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
+		{"media", "set", living, "--batch", writeTemp(t, "files.tsv", "")},
 		{"places", "apply", living, livingPlaces(t)},
 		{"merge-people", living, "@I3@", "@I5@"},
 		{"merge-families", living, "@F1@", "@F2@"},

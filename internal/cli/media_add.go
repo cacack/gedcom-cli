@@ -154,11 +154,11 @@ func readMediaBatch(name string) ([]mediaRow, error) {
 	return rows, nil
 }
 
-// rowError prefixes a row's error with where the row came from.
-func rowError(row mediaRow, format string, a ...any) string {
+// rowError prefixes a row's error with its --batch line, when it has one.
+func rowError(line int, format string, a ...any) string {
 	msg := fmt.Sprintf(format, a...)
-	if row.line > 0 {
-		return fmt.Sprintf("line %d: %s", row.line, msg)
+	if line > 0 {
+		return fmt.Sprintf("line %d: %s", line, msg)
 	}
 	return msg
 }
@@ -176,17 +176,17 @@ func addMedia(doc *gedcom.Document, rows []mediaRow, form, root string) ([]media
 	for i, row := range rows {
 		records, err := findRecords(doc, []string{row.to})
 		if err != nil {
-			errs = append(errs, rowError(row, "%v", err))
+			errs = append(errs, rowError(row.line, "%v", err))
 			continue
 		}
 		record := records[0]
 		media := mediaLinks(record)
 		if media == nil {
-			errs = append(errs, rowError(row, "%s is a %s record; want an individual, family or source", record.XRef, record.Type))
+			errs = append(errs, rowError(row.line, "%s is a %s record; want an individual, family or source", record.XRef, record.Type))
 			continue
 		}
 		if msg := checkMediaPath(row.path, root); msg != "" {
-			errs = append(errs, rowError(row, "%s", msg))
+			errs = append(errs, rowError(row.line, "%s", msg))
 			continue
 		}
 		rowForm := form
@@ -194,7 +194,7 @@ func addMedia(doc *gedcom.Document, rows []mediaRow, form, root string) ([]media
 			rowForm = defaultForm(doc, row.path)
 		}
 		if rowForm == "" {
-			errs = append(errs, rowError(row, "cannot tell the FORM of %s from its extension; pass --form", row.path))
+			errs = append(errs, rowError(row.line, "cannot tell the FORM of %s from its extension; pass --form", row.path))
 			continue
 		}
 		targets[i] = target{record: record, media: media, form: rowForm}

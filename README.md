@@ -54,6 +54,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`diff`](#diff) | Compare two versions of a file record by record |
 | [`media check`](#media-check) | Report whether each `FILE` reference resolves under a media folder |
 | [`media add`](#media-add) | Link a media file from a record, writing a new file |
+| [`media set`](#media-set) | Set the `FILE` of an existing `OBJE` record, writing a new file |
 | [`places apply`](#places-apply) | Rewrite `PLAC` values and set their coordinates from a place table, writing a new file |
 | [`extract`](#extract) | Write a branch of the tree to its own file |
 | [`put`](#put) | Replace records by xref, or add new ones, writing a new file |
@@ -432,6 +433,26 @@ gedcom media add family.ged --root media --batch links.tsv -o out.ged
 
 ```text
 @I1@	@O2@	created	photos/ada.jpg
+```
+
+### media set
+
+Sets the `FILE`, and with `--form` the `FORM`, of an `OBJE` record that
+already exists, such as one an export left with an empty `FILE`, and writes
+the result to a new file. The record keeps its xref, its other lines and every
+link to it. A `FILE` that holds another path is replaced only with
+`--replace`, and a record with more than one `FILE` is refused. `--root`
+checks each path as `media add` does. A tab-separated file of xref, path and
+an optional `FORM` is applied whole or not at all:
+
+```sh
+gedcom media set family.ged --root media --obje @O1@ --path photos/ada.jpg -o out.ged
+gedcom media set family.ged --root media --batch files.tsv -o out.ged
+```
+
+```text
+@O1@	set	photos/ada.jpg
+@O2@	unchanged	photos/ben.jpg
 ```
 
 ### places apply
@@ -894,7 +915,7 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `put-header`, `delete`, `name`, `retag`, `move-value`, `media add`, `places apply`,
+  too: `put`, `put-header`, `delete`, `name`, `retag`, `move-value`, `media add`, `media set`, `places apply`,
   the merge commands, `repeated-events`, `repeated-names` and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header

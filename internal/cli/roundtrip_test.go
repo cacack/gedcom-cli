@@ -46,6 +46,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		}
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
+	// An empty batch requests no change.
+	"media set": func(t *testing.T, in, out string) []string {
+		batch := filepath.Join(filepath.Dir(out), "empty.tsv")
+		if err := os.WriteFile(batch, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"media", "set", in, "--batch", batch, "-o", out}
+	},
 	"extract": extractEveryone,
 	// Moving a name to where it is changes nothing.
 	"name": func(_ *testing.T, in, out string) []string {

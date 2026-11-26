@@ -27,9 +27,11 @@ func newMediaCmd() *cobra.Command {
 themselves are never read, moved or changed.
 
   check  report whether each FILE reference resolves under a media folder
-  add    create or reuse an OBJE record for a file and link it from a record`,
+  add    create or reuse an OBJE record for a file and link it from a record
+  set    set the FILE of an existing OBJE record`,
 		Example: `  gedcom media check --root media family.ged
-  gedcom media add family.ged --to @I1@ --path photos/ada.jpg -o out.ged`,
+  gedcom media add family.ged --to @I1@ --path photos/ada.jpg -o out.ged
+  gedcom media set family.ged --obje @O1@ --path photos/ada.jpg -o out.ged`,
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return usageError{fmt.Errorf("unknown media command %q; see 'gedcom media --help'", args[0])}
@@ -38,7 +40,7 @@ themselves are never read, moved or changed.
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	cmd.AddCommand(newMediaCheckCmd(), newMediaAddCmd())
+	cmd.AddCommand(newMediaCheckCmd(), newMediaAddCmd(), newMediaSetCmd())
 	return cmd
 }
 
