@@ -206,3 +206,51 @@ func TestMediaSetUsage(t *testing.T) {
 		t.Error("input file changed")
 	}
 }
+
+func TestMediaSetFormOnly(t *testing.T) {
+	ged := replaceOnce(t, mediaSetGED, "1 FILE photos/cara.jpg\n", `1 FILE photos\cara.jpg`+"\n")
+	file, _ := mediaFixture(t, ged)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "set", file, "--obje", "@O3@", "--path", "photos/cara.jpg", "--form", "image/jpeg", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	// The FILE keeps its spelling, and the report shows what it holds.
+	if want := "@O3@\tset\tphotos\\cara.jpg\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	want := replaceOnce(t, ged, "1 FILE photos\\cara.jpg\n2 FORM jpg\n", "1 FILE photos\\cara.jpg\n2 FORM image/jpeg\n")
+	if got := readFile(t, out); got != want {
+		t.Errorf("output =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// mediaSet55GED has an OBJE in the GEDCOM 5.5 layout: FORM beside FILE.
+const mediaSet55GED = `0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @O1@ OBJE
+1 FORM jpg
+1 FILE
+1 TITL Ada, 1920
+0 TRLR
+`
+
+func TestMediaSetForm55(t *testing.T) {
+	file, _ := mediaFixture(t, mediaSet55GED)
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "set", file, "--obje", "@O1@", "--path", "photos/ada.png", "--form", "png", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if want := "@O1@\tset\tphotos/ada.png\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	want := replaceOnce(t, mediaSet55GED, "1 FORM jpg\n1 FILE\n", "1 FORM png\n1 FILE photos/ada.png\n")
+	if got := readFile(t, out); got != want {
+		t.Errorf("output =\n%s\nwant\n%s", got, want)
+	}
+}

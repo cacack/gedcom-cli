@@ -12,7 +12,7 @@ import (
 
 // Actions media set reports for a row, beside actionUnchanged.
 const (
-	actionSet      = "set"      // an empty FILE now holds the path
+	actionSet      = "set"      // an empty FILE now holds the path, or only the FORM changed
 	actionReplaced = "replaced" // a FILE with another value, replaced with --replace
 )
 
@@ -60,7 +60,10 @@ reported, by line, and nothing is written.
 
 Text output is one tab-separated line per row: xref, action, path. The action
 is "set" (an empty FILE now holds the path), "replaced" (with --replace) or
-"unchanged" (the FILE, and the FORM if given, already held it).
+"unchanged" (the FILE, and the FORM if given, already held it). "set" also
+covers a FILE that already held the path but whose FORM --form changed. The
+path reported is the one FILE holds: a FILE that already named the path, such
+as photos\ada.jpg for photos/ada.jpg, keeps how it spells it.
 
 Records not involved are written exactly as they were read.`,
 		Example: `  gedcom media set family.ged --obje @O1@ --path photos/ada.jpg -o out.ged
@@ -155,10 +158,11 @@ func readMediaSetBatch(name string) ([]mediaSetRow, error) {
 // When any row fails, doc is left unchanged and every failure is returned.
 func setMedia(doc *gedcom.Document, rows []mediaSetRow, root string, replace bool) ([]mediaSetResult, error) {
 	type target struct {
-		object *gedcom.MediaObject
-		file   *gedcom.MediaFile
-		path   string
-		action string
+		object    *gedcom.MediaObject
+		file      *gedcom.MediaFile
+		path      string
+		writePath bool // false when FILE already names the path
+		action    string
 	}
 	targets := make([]target, len(rows))
 	seen := map[string]int{} // xref to the index of the row that sets it
@@ -190,11 +194,11 @@ func setMedia(doc *gedcom.Document, rows []mediaSetRow, root string, replace boo
 		}
 		file := object.Files[0]
 		filePath := strings.ReplaceAll(row.path, `\`, "/")
-		action := actionSet
+		action, writePath := actionSet, true
 		switch {
 		case strings.TrimSpace(file.FileRef) == "":
 		case normalizeMediaPath(file.FileRef) == normalizeMediaPath(filePath):
-			action = actionUnchanged
+			action, writePath = actionUnchanged, false
 			if row.form != "" && mediaForm(object, file) != row.form {
 				action = actionSet
 			}
@@ -204,7 +208,7 @@ func setMedia(doc *gedcom.Document, rows []mediaSetRow, root string, replace boo
 			errs = append(errs, rowError(row.line, "%s already has FILE %s; pass --replace to replace it", record.XRef, oneLine(file.FileRef)))
 			continue
 		}
-		targets[i] = target{object: object, file: file, path: filePath, action: action}
+		targets[i] = target{object: object, file: file, path: filePath, writePath: writePath, action: action}
 	}
 	if len(errs) > 0 {
 		return nil, errors.New(strings.Join(errs, "\n"))
@@ -213,16 +217,13 @@ func setMedia(doc *gedcom.Document, rows []mediaSetRow, root string, replace boo
 	results := make([]mediaSetResult, 0, len(rows))
 	for i, row := range rows {
 		t := targets[i]
-		if t.action != actionUnchanged {
-			// A FILE that already names the path keeps how it spells it.
-			if t.action != actionSet || strings.TrimSpace(t.file.FileRef) == "" {
-				t.file.FileRef = t.path
-			}
-			if row.form != "" {
-				setMediaForm(t.object, t.file, row.form)
-			}
+		if t.writePath {
+			t.file.FileRef = t.path
 		}
-		results = append(results, mediaSetResult{Object: t.object.XRef, Path: t.path, Action: t.action})
+		if t.action != actionUnchanged && row.form != "" {
+			setMediaForm(t.object, t.file, row.form)
+		}
+		results = append(results, mediaSetResult{Object: t.object.XRef, Path: t.file.FileRef, Action: t.action})
 	}
 	return results, nil
 }
