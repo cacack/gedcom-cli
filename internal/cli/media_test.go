@@ -429,6 +429,18 @@ func TestMediaAddBatchFormUnknown(t *testing.T) {
 	}
 }
 
+func TestMediaAddFormUnknown(t *testing.T) {
+	file, root := mediaFixture(t, media70GED, "photos/scan")
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--root", root, "--to", "@I1@", "--path", "photos/scan", "-o", out)
+	if code != ExitError || stdout != "" {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+	if want := "cannot tell the FORM of photos/scan from its extension; pass --form"; !strings.Contains(stderr, want) || strings.Contains(stderr, "line ") {
+		t.Errorf("stderr = %q, want %q with no line", stderr, want)
+	}
+}
+
 func TestMediaAddBatchAllOrNone(t *testing.T) {
 	file, root := mediaFixture(t, mediaGED, "photos/cara.jpg")
 	batch := filepath.Join(t.TempDir(), "links.tsv")

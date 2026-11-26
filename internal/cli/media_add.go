@@ -92,6 +92,7 @@ Records not involved are written exactly as they were read.`,
 				return err
 			}
 			var rows []mediaRow
+			var fallback string // with --batch, --form only fills in rows with no FORM
 			switch {
 			case batch != "" && (to != "" || mediaPath != "" || title != ""):
 				return usageError{errors.New("--batch cannot be combined with --to, --path or --title")}
@@ -99,11 +100,11 @@ Records not involved are written exactly as they were read.`,
 				if rows, err = readMediaBatch(batch); err != nil {
 					return err
 				}
+				fallback = form
 			case to == "" || mediaPath == "":
 				return usageError{errors.New("give --to and --path, or --batch")}
 			default:
 				rows = []mediaRow{{to: to, path: mediaPath, title: title, form: form}}
-				form = ""
 			}
 
 			res, err := decodeForWrite(args[0])
@@ -111,7 +112,7 @@ Records not involved are written exactly as they were read.`,
 				return err
 			}
 			doc := res.Document
-			added, err := addMedia(doc, rows, form, root)
+			added, err := addMedia(doc, rows, fallback, root)
 			if err != nil {
 				return err
 			}
@@ -208,7 +209,8 @@ func addMedia(doc *gedcom.Document, rows []mediaRow, fallback, root string) ([]m
 		}
 		if rowForm == "" {
 			hint := "pass --form"
-			if row.line > 0 {
+			if row.line > 0 { // only --batch rows have a line
+
 				hint = "give it in the fourth column or pass --form"
 			}
 			errs = append(errs, rowError(row.line, "cannot tell the FORM of %s from its extension; %s", row.path, hint))
