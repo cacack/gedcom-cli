@@ -575,10 +575,37 @@ func TestListWith(t *testing.T) {
 	if strings.Contains(stdout, `"with"`) {
 		t.Errorf("json without --with has a with key:\n%s", stdout)
 	}
-	// Every record type takes it.
-	code, stdout, stderr = run(t, "list", "--with", "INDI.SEX", "--with", "INDI.BIRT.PLAC", records, "indi")
-	if code != ExitOK || stderr != "" || !strings.HasPrefix(stdout, "@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\tfalse\tF\t") {
-		t.Errorf("indi: exit = %d, stderr = %q, stdout:\n%s", code, stderr, stdout)
+	// Every record type takes it, each column holding its own path's values.
+	for _, tt := range []struct {
+		kind string
+		with []string
+		want string
+	}{
+		{"indi", []string{"INDI.SEX", "INDI.BIRT.PLAC"}, "@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\tfalse\tF\tSpringfield, Example County\n" +
+			"@I2@\tDell /Sample/\t21 JUL 1899\t2 FEB 1960\tfalse\tM\t\n" +
+			"@I3@\tEdie /Sample/\t9 SEP 1925\t\ttrue\tF\t\n"},
+		{"fam", []string{"FAM.CHIL", "FAM.MARR.PLAC"}, "@F1@\t@I2@\t@I1@\t12 JUN 1923\t1\t@I3@\t\n"},
+		{"sour", []string{"SOUR.REPO"}, "@S1@\tSample Family Bible\tInvented Author\t@R1@\n"},
+		{"repo", []string{"REPO.NAME"}, "@R1@\tExample County Archive\tExample County Archive\n"},
+		{"subm", []string{"SUBM.NAME"}, "@U1@\tTest Submitter\tTest Submitter\n"},
+	} {
+		args := []string{"list"}
+		for _, with := range tt.with {
+			args = append(args, "--with", with)
+		}
+		code, stdout, stderr = run(t, append(args, records, tt.kind)...)
+		if code != ExitOK || stderr != "" || stdout != tt.want {
+			t.Errorf("%s: exit = %d, stderr = %q, stdout:\n%q\nwant:\n%q", tt.kind, code, stderr, stdout, tt.want)
+		}
+	}
+	for kind, header := range map[string]string{"note": "5.5.1\n1 CHAR UTF-8", "snote": "7.0"} {
+		tag := strings.ToUpper(kind)
+		notes := writeTemp(t, kind+".ged", "0 HEAD\n1 GEDC\n2 VERS "+header+"\n"+
+			"0 @N1@ "+tag+" First note\n1 REFN 7\n0 @N2@ "+tag+" Another\n0 TRLR\n")
+		code, stdout, stderr = run(t, "list", "--with", tag+".REFN", notes, kind)
+		if want := "@N1@\tFirst note\t7\n@N2@\tAnother\t\n"; code != ExitOK || stderr != "" || stdout != want {
+			t.Errorf("%s: exit = %d, stderr = %q, stdout = %q, want %q", kind, code, stderr, stdout, want)
+		}
 	}
 }
 
@@ -590,7 +617,11 @@ func TestListWithWrongPath(t *testing.T) {
 			t.Errorf("--with %s: exit = %d, stdout = %q, stderr = %q; want %d naming the path", with, code, stdout, stderr, ExitUsage)
 		}
 	}
-	code, stdout, stderr := run(t, "list", "--with", "INDI.NAME", path, "names")
+	code, stdout, stderr := run(t, "list", "--with", "OBJE._OID", "--with", "OBJE._OID", path, "obje")
+	if code != ExitUsage || stdout != "" || !strings.Contains(stderr, `"OBJE._OID"`) {
+		t.Errorf("repeated path: exit = %d, stdout = %q, stderr = %q; want %d naming the path", code, stdout, stderr, ExitUsage)
+	}
+	code, stdout, stderr = run(t, "list", "--with", "INDI.NAME", path, "names")
 	if code != ExitUsage || stdout != "" || !strings.Contains(stderr, "--with") {
 		t.Errorf("names: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}

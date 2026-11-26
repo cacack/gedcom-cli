@@ -223,8 +223,8 @@ joined on. A record with no line at the path has an empty value. In text
 output several values are joined by "` + withSeparator + `" and line breaks
 are printed as spaces; in JSON a row has a "with" object from each path to
 an array of its values, empty when there are none. --with applies to the record
-types only, and a path under another record type is an error. A record
---redact-living hides has no values.
+types only, and a path under another record type, or a path given twice, is
+an error. A record --redact-living hides has no values.
 
 For obje, title and format are those of the first FILE. A record that puts
 TITL and FORM beside FILE instead of under it (the GEDCOM 5.5 layout) lists
@@ -339,10 +339,15 @@ with no dates at all is presumed living.`,
 			if len(opts.with) > 0 && !slices.Contains(recordTypes, kind) {
 				return usageError{fmt.Errorf("--with applies only to the record types (%s), not %s", strings.Join(recordTypes, ", "), kind)}
 			}
-			for _, with := range opts.with {
+			for i, with := range opts.with {
 				path := strings.Split(with, ".")
 				if len(path) < 2 || slices.Contains(path, "") || path[0] != strings.ToUpper(kind) {
 					return usageError{fmt.Errorf("invalid --with %q: want a tag path under %s, such as %[2]s.CHAN.DATE", with, strings.ToUpper(kind))}
+				}
+				// JSON keys the values by path, so a repeated path would be one
+				// key there but two columns in text.
+				if slices.Contains(opts.with[:i], with) {
+					return usageError{fmt.Errorf("--with %q is given more than once", with)}
 				}
 			}
 			doc, living, err := openDocument(cmd, args[0])
