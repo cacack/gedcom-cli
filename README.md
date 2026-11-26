@@ -45,6 +45,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
 | [`get`](#get) | Print records by xref, or the header |
+| [`refs`](#refs) | List the pointers to records by xref: who uses this source, media record or person |
 | [`list`](#list) | List the records of one type, or the people's names, the places, tag paths or one tag's values, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
@@ -117,6 +118,30 @@ With `--format json` each record is gedcom-go's own shape for it, plus a
 `Type` key holding its level-0 tag (`INDI`, `FAM`, `SUBM`, and `HEAD` for the
 header). `put` takes records back; [`put-header`](#put-header) takes the
 header back.
+
+### refs
+
+Lists the pointers to records by xref, one per line: the record holding it
+(`-` for the header), the tag path to it and the record it points at. It is
+the list [`delete`](#delete) refuses with, asked for without writing
+anything: who uses this source, this media record, this repository, before a
+merge or a cleanup.
+
+```sh
+gedcom refs family.ged @O1@
+gedcom list --format json family.ged obje | jq -r '.[].xref' | gedcom refs family.ged -
+```
+
+```text
+@I1@	INDI.OBJE	@O1@
+@F1@	FAM.OBJE	@O1@
+```
+
+A record nothing points at lists nothing and exits `0`; an xref the file does
+not define exits `1`. `-` reads xrefs from stdin as for `get`. With
+`--format json` each pointer has the keys `delete` reports: `from`, `path`,
+`to`. The output is xrefs and tag paths only, so `--redact-living` does not
+change it.
 
 ### list
 
@@ -934,7 +959,8 @@ These hold for every command, so scripts and agents can rely on them:
   the merge commands, `repeated-events`, `repeated-names` and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header
-  (`get HEAD`): check their titles, file names and addresses yourself. Use it before pasting
+  (`get HEAD`): check their titles, file names and addresses yourself. `refs` prints xrefs and
+  tag paths only, and prints them all. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or
   cremation, and no date of the person's, of a family they are a spouse in or

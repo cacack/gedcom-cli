@@ -164,6 +164,8 @@ func TestRedactLiving(t *testing.T) {
 		// put-header reports the header only, which is never redacted.
 		{"put-header", []string{"put-header", living, header, "-o", out}, ExitOK, []string{"header replaced"}},
 		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
+		// refs prints xrefs and tag paths only, the same with or without it.
+		{"refs", []string{"refs", living, "@I3@", "@I5@"}, ExitOK, []string{"@F1@\tFAM.CHIL\t@I3@\n", "@F2@\tFAM.WIFE\t@I3@\n", "@F2@\tFAM.CHIL\t@I5@\n"}},
 		{"name", []string{"name", living, "@I3@", "1", "--type", "birth", "-o", out}, ExitOK, []string{"@I3@ name 1", "before\tLiving\n  after\tLiving\n"}},
 		{"name json", []string{"name", "--format", "json", living, "@I1@", "1", "--type", "birth", "-o", out}, ExitOK, []string{`"2 TYPE birth"`, "Ann /Example/"}},
 		// retag reports counts; a finding the edit adds about Cleo is hidden.
