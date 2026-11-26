@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `repeated-events`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `repeated-events`, `repeated-names`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -65,6 +65,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
 | [`repeated-events`](#repeated-events) | Report events a record holds twice, and fold them into one, writing a new file |
+| [`repeated-names`](#repeated-names) | Report names a person holds twice, and fold them into one, writing a new file |
 | [`merge-sources`](#merge-sources-and-merge-repositories) | Fold one source into another, writing a new file |
 | [`merge-repositories`](#merge-sources-and-merge-repositories) | Fold one repository into another, writing a new file |
 | [`combine`](#combine) | Join files into one, writing a new file |
@@ -147,10 +148,13 @@ file order, so a person's later names show too: xref, the name's position
 among the person's names, the value, the `GIVN`, `SURN`, `NSFX`, `NICK` and
 `TYPE` under it as written (empty when absent), the number of citations under
 it, and `same_as`, the position of the person's first earlier name equal to
-this one (0 if none). Two names are equal when their values match after
-ignoring case and removing spaces and punctuation, so `John /Smith/ Jr.`
-equals `john smith jr`. `--repeated` keeps only the names with a `same_as`,
-the repeats to fold:
+this one (0 if none). Two names are equal, by gedcom-go's rule, when their
+values hold the same words in the same order, case ignored, with spaces,
+punctuation and the surname slashes only separating words: `John /Smith/ Jr.`
+equals `john  smith, jr`, but `O'Brien` does not equal `OBrien`.
+`--repeated` keeps only the names with a `same_as`. To fold repeated names
+see [`repeated-names`](#repeated-names); `validate --style NAME_PART_MISMATCH`
+reports a `GIVN` or `SURN` that disagrees with its name's value:
 
 ```sh
 gedcom list family.ged names
@@ -706,6 +710,29 @@ record, its lines and those of the event it was folded into, as
 `merge-people` does. Records with nothing to fold are written as read, and
 folding the output again folds nothing.
 
+### repeated-names
+
+Reports the names one individual holds twice, often with different citations
+under each copy, and with `--fold` folds each into the first, writing a new
+file. Two names are the same when their values are equal by the rule
+`list names` gives `same_as` by, their `TYPE`s agree (or neither has one),
+and each name piece (`GIVN`, `SURN`, `NSFX` and the rest) both have is
+written identically; a piece only one has does not keep them apart.
+`gedcom repeated-names --help` gives the full rule:
+
+```sh
+gedcom repeated-names family.ged
+gedcom repeated-names --fold family.ged -o folded.ged
+```
+
+```text
+repeated	@I1@	NAME	1 NAME John /Example/ | 2 SOUR @S1@ | 3 PAGE 1	1 NAME john example | 2 SOUR @S1@ | 3 PAGE 2
+```
+
+The first name keeps its lines and gains each line of the others it lacks,
+so a citation both hold line for line is kept once. The report and the rest
+of the file behave as for `repeated-events`.
+
 ### merge-sources and merge-repositories
 
 `merge-sources` folds one source record into another: a file combined from
@@ -835,7 +862,7 @@ These hold for every command, so scripts and agents can rely on them:
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
   too: `put`, `put-header`, `delete`, `name`, `retag`, `media add`, `places apply`,
-  the merge commands, `repeated-events` and `convert` edit or rewrite the whole tree and write
+  the merge commands, `repeated-events`, `repeated-names` and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header
   (`get HEAD`): check their titles, file names and addresses yourself. Use it before pasting

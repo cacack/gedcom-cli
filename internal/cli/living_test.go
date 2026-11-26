@@ -169,6 +169,9 @@ func TestRedactLiving(t *testing.T) {
 		// Cleo's (@I3@) repeated birth is hidden; Ann's (@I1@) repeated death is not.
 		{"repeated-events", []string{"repeated-events", livingWithRepeats(t)}, ExitOK, []string{"repeated\t@I3@\tBIRT\tLiving\tLiving\n", "repeated\t@I1@\tDEAT\t1 DEAT | 2 DATE 9 OCT 1979\t"}},
 		{"repeated-events fold", []string{"repeated-events", "--fold", livingWithRepeats(t), "-o", out}, ExitOK, []string{"folded\t@I3@\tBIRT\tLiving\tLiving\n", "folded\t@I1@\tDEAT\t1 DEAT | 2 DATE 09 Oct 1979"}},
+		// Cleo's (@I3@) repeated name is hidden; Ann's (@I1@) is not.
+		{"repeated-names", []string{"repeated-names", livingWithRepeatedNames(t)}, ExitOK, []string{"repeated\t@I3@\tNAME\tLiving\tLiving\n", "repeated\t@I1@\tNAME\t1 NAME Ann /Example/\t1 NAME ann example\n"}},
+		{"repeated-names fold", []string{"repeated-names", "--fold", livingWithRepeatedNames(t), "-o", out}, ExitOK, []string{"folded\t@I3@\tNAME\tLiving\tLiving\n", "folded\t@I1@\tNAME\t1 NAME ann example\t1 NAME Ann /Example/\n"}},
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
@@ -286,6 +289,20 @@ func livingWithRepeats(t *testing.T) string {
 	return writeTemp(t, "living-repeats.ged", s)
 }
 
+// livingWithRepeatedNames is the living fixture with Ann's (@I1@) and
+// Cleo's (@I3@) names each written a second time, for the repeated-names
+// rows.
+func livingWithRepeatedNames(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(living)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(b), "1 NAME Ann /Example/\n", "1 NAME Ann /Example/\n1 NAME ann example\n", 1)
+	s = strings.Replace(s, "1 NAME Cleo /Example/\n", "1 NAME Cleo /Example/\n1 NAME Cleo /Example/\n2 NOTE Also Cleo\n", 1)
+	return writeTemp(t, "living-repeated-names.ged", s)
+}
+
 // livingWithStyle is the living fixture with a vendor tag under Ann's (@I1@)
 // name and Cleo's (@I3@), for the NAME_VENDOR_TAG style check.
 func livingWithStyle(t *testing.T) string {
@@ -327,6 +344,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"merge-repositories", sources, "@R1@", "@R2@"},
 		{"convert", living, "--to", "7.0"},
 		{"repeated-events", "--fold", livingWithRepeats(t)},
+		{"repeated-names", "--fold", livingWithRepeatedNames(t)},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out.ged")

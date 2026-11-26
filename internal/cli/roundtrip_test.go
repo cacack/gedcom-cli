@@ -67,6 +67,10 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 	"repeated-events": func(_ *testing.T, in, out string) []string {
 		return []string{"repeated-events", "--fold", in, "-o", out}
 	},
+	// A file with no repeated names has nothing to fold.
+	"repeated-names": func(_ *testing.T, in, out string) []string {
+		return []string{"repeated-names", "--fold", in, "-o", out}
+	},
 	// put with an unedited copy of every record, as get prints them.
 	"put": func(t *testing.T, in, out string) []string {
 		fragment := filepath.Join(t.TempDir(), "records.ged")

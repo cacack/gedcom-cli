@@ -613,6 +613,17 @@ func TestListNamesRepeated(t *testing.T) {
 	}
 }
 
+func TestListNamesSameAsWords(t *testing.T) {
+	// Values are equal when they hold the same words in the same order:
+	// "OBrien" is one word and "O'Brien" two, and order counts.
+	path := writeTemp(t, "words.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n"+
+		"0 @I1@ INDI\n1 NAME Ann /O'Brien/\n1 NAME Ann /OBrien/\n1 NAME O'Brien Ann\n1 NAME ANN O BRIEN\n0 TRLR\n")
+	code, stdout, stderr := run(t, "list", "--repeated", path, "names")
+	if want := "@I1@\t4\tANN O BRIEN\t\t\t\t\t\t0\t1\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+}
+
 func TestListNamesRedactLiving(t *testing.T) {
 	// Both people in named have no dates, so both are presumed living: each
 	// lists one name, Living, and no name is repeated.
@@ -685,7 +696,7 @@ func TestListHelpHasExample(t *testing.T) {
 	}
 	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac   count, place",
 		"subm   xref, name", "snote  xref, text", "tags   count, path", "values count, value", "but SUBN",
-		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", "ignoring case and removing every space and\npunctuation character", "gedcom list --repeated family.ged names"} {
+		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", "same\nwords in the same order, case ignored", "repeated-names", "NAME_PART_MISMATCH", "gedcom list --repeated family.ged names"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}

@@ -81,7 +81,7 @@ type noteRow struct {
 // nameRow is one NAME line of an individual. Position counts the person's
 // names from 1, in file order. The parts are the values of the lines under
 // the NAME, as written. SameAs is the position of the person's first earlier
-// name that nameKey makes equal to this one, or 0.
+// name whose value gedcom.SamePersonalName makes equal to this one, or 0.
 type nameRow struct {
 	XRef      string `json:"xref"`
 	Position  int    `json:"position"`
@@ -179,12 +179,14 @@ person's names, from 1. value is the NAME value; givn, surn, nsfx, nick and
 type are the values of the GIVN, SURN, NSFX, NICK and TYPE lines under it,
 as written, and empty when the line is absent (the first, if repeated).
 citations is the number of SOUR lines under it. same_as is the position of
-the person's first earlier name equal to this one, or 0: two names are equal
-when their values match after ignoring case and removing every space and
-punctuation character (the surname slashes, commas and periods among them),
-so "John /Smith/ Jr." equals "john smith jr". --repeated lists only the names
-with a same_as, the names to fold into an earlier one; on a file with none it
-prints nothing. A person --redact-living hides has one name, Living.
+the person's first earlier name whose value equals this one's, or 0.
+--repeated lists only the names with a same_as; on a file with none it
+prints nothing. 'gedcom repeated-names' reports, and folds, the repeats whose
+name pieces and TYPE agree too, and 'gedcom validate --style
+NAME_PART_MISMATCH' reports a GIVN or SURN that disagrees with its value. A
+person --redact-living hides has one name, Living.
+
+` + samePersonalNameHelp + `
 
 For plac, each distinct PLAC value in the file's records is listed once,
 exactly as written, with how many times it is used: values that differ only
@@ -349,14 +351,14 @@ func nameRows(doc *gedcom.Document, repeated bool, limit int) []row {
 			continue
 		}
 		lines := record.FindAll("NAME")
-		keys := make([]string, len(ind.Names))
 		for i, name := range ind.Names {
 			if name == nil {
 				continue
 			}
-			keys[i] = nameKey(name.Full)
 			r := nameRow{XRef: ind.XRef, Position: i + 1, Value: name.Full, Citations: len(name.SourceCitations),
-				SameAs: slices.Index(keys[:i], keys[i]) + 1}
+				SameAs: slices.IndexFunc(ind.Names[:i], func(earlier *gedcom.PersonalName) bool {
+					return earlier != nil && gedcom.SamePersonalName(earlier.Full, name.Full)
+				}) + 1}
 			if repeated && r.SameAs == 0 {
 				continue
 			}
@@ -380,17 +382,6 @@ func namePart(record *gedcom.Record, name *gedcom.Tag, tag string) string {
 		}
 	}
 	return ""
-}
-
-// nameKey is a name value as names compare for same_as: in lower case, with
-// every space and punctuation character removed.
-func nameKey(value string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || unicode.IsPunct(r) {
-			return -1
-		}
-		return unicode.ToLower(r)
-	}, value)
 }
 
 // placeRows counts the uses of each distinct PLAC value in doc's records and
