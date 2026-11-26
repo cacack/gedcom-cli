@@ -463,8 +463,10 @@ unreferenced			photos/cara.jpg
 
 Links a file from an individual, family or source, reusing the `OBJE` record
 with that path or creating one, and writes the result to a new file. Running
-it again changes nothing. A tab-separated file of links is applied whole or
-not at all:
+it again changes nothing. A tab-separated file of links (xref, path, an
+optional title and an optional `FORM`) is applied whole or not at all. A
+row's `FORM` is its fourth column, else the one its extension gives; with
+`--batch`, `--form` only fills in rows that have neither:
 
 ```sh
 gedcom media add family.ged --to @I1@ --path photos/ada.jpg --title "Ada, 1920" -o out.ged
