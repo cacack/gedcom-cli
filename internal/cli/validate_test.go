@@ -128,11 +128,13 @@ func TestValidateProblemsJSON(t *testing.T) {
 }
 
 // TestValidateDecodeFindingXRef checks that a decode finding names the record
-// its line is in, and that one in the header names none.
+// its line is in, and that one in the header names none. The unreadable BIRT
+// date is reported twice: by the decoder and, since gedcom-go v3.17.0, by the
+// validator.
 func TestValidateDecodeFindingXRef(t *testing.T) {
 	const fixture = "testdata/decode-xref.ged"
 	code, report, stdout, _ := validateJSON(t, fixture)
-	if code != ExitError || len(report.Findings) != 3 {
+	if code != ExitError || len(report.Findings) != 4 {
 		t.Fatalf("exit = %d, findings = %+v", code, report.Findings)
 	}
 	header, record := report.Findings[0], report.Findings[1]
@@ -143,8 +145,8 @@ func TestValidateDecodeFindingXRef(t *testing.T) {
 		t.Errorf("record finding = %+v, want xref @I1@", record)
 	}
 	// The key is absent, not empty, on a finding outside any record.
-	if strings.Count(stdout, `"xref"`) != 2 {
-		t.Errorf("want an xref key on the two findings in records only:\n%s", stdout)
+	if strings.Count(stdout, `"xref"`) != 3 {
+		t.Errorf("want an xref key on the three findings in records only:\n%s", stdout)
 	}
 
 	code, stdout, _ = run(t, "validate", fixture)
