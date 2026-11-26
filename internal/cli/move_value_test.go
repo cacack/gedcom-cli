@@ -131,6 +131,53 @@ func TestMoveValueTwoLinesToOneLine(t *testing.T) {
 	}
 }
 
+// TestMoveValuePrependEdges checks prepend PLAC on PLACs other than the
+// fixture's: one continued with CONC, an empty one, two lines prepended to
+// one PLAC, and a PLAC with a FORM or TRAN describing its old value.
+func TestMoveValuePrependEdges(t *testing.T) {
+	head := "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n0 @I1@ INDI\n1 BIRT\n"
+	head70 := "0 HEAD\n1 GEDC\n2 VERS 7.0\n0 @I1@ INDI\n1 BIRT\n"
+	tests := []struct {
+		name, in, rows string
+		code           int
+		want, text     string // the file written, or "" for none; a line of stdout
+	}{
+		{"PLAC continued with CONC", head + "2 PLAC Springfield, Ohi\n3 CONC o\n2 ADDR Example Hospital\n0 TRLR\n",
+			"INDI.BIRT.ADDR\tExample Hospital\tprepend PLAC\n", ExitOK,
+			head + "2 PLAC Example Hospital, Springfield, Ohio\n0 TRLR\n", ": 1 line moved, 0 MAP removed, 1 record changed\n"},
+		{"empty PLAC", head + "2 PLAC\n2 ADDR Example Hospital\n0 TRLR\n",
+			"INDI.BIRT.ADDR\tExample Hospital\tprepend PLAC\n", ExitOK,
+			head + "2 PLAC Example Hospital\n0 TRLR\n", ": 1 line moved, "},
+		{"prepended to twice", head + "2 PLAC Springfield\n2 ADDR Example Hall\n2 ADDR Example Lodge\n0 TRLR\n",
+			"INDI.BIRT.ADDR\tExample Hall\tprepend PLAC\nINDI.BIRT.ADDR\tExample Lodge\tprepend PLAC\n", ExitError,
+			"", "  event's PLAC is moved, or prepended to twice\t@I1@\tline 10\tADDR\trow 3\n"},
+		{"PLAC with a FORM", head + "2 PLAC Springfield, Ohio\n3 FORM City, State\n2 ADDR Example Hospital\n0 TRLR\n",
+			"INDI.BIRT.ADDR\tExample Hospital\tprepend PLAC\n", ExitError,
+			"", "  event's PLAC has FORM under it\t@I1@\tline 10\tADDR\trow 2\n"},
+		{"PLAC with a TRAN", head70 + "2 PLAC Springfield\n3 TRAN Springfeld\n4 LANG de\n2 ADDR Example Hospital\n0 TRLR\n",
+			"INDI.BIRT.ADDR\tExample Hospital\tprepend PLAC\n", ExitError,
+			"", "  event's PLAC has TRAN under it\t@I1@\tline 9\tADDR\trow 2\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := writeTemp(t, "in.ged", tt.in)
+			table := writeTemp(t, "moves.tsv", "path\tvalue\taction\n"+tt.rows)
+			out := filepath.Join(t.TempDir(), "out.ged")
+			code, stdout, _ := run(t, "move-value", in, table, "-o", out)
+			if code != tt.code || !strings.Contains(stdout, tt.text) {
+				t.Errorf("exit = %d, want %d; stdout lacks %q:\n%s", code, tt.code, tt.text, stdout)
+			}
+			got, err := os.ReadFile(out)
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("output:\n%s\nwant:\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestMoveValueFindings checks that an edit that adds a validation finding
 // writes nothing.
 func TestMoveValueFindings(t *testing.T) {
@@ -202,6 +249,7 @@ func TestMoveValueTableErrors(t *testing.T) {
 		name, table, want string
 	}{
 		{"no header", "INDI.BIRT.ADDR\tx\tto NOTE\n", `want a header row naming "path", "value" and "action" columns`},
+		{"empty", "\n\n", "moves.tsv: no header row"},
 		{"column twice", "path\tvalue\taction\tvalue\n", `column "value" is named twice`},
 		{"no path", "path\tvalue\taction\n\tx\tto NOTE\n", "line 2: no path"},
 		{"no value", "path\tvalue\taction\n*.PLAC\t\tto NOTE\n", "line 2: no value"},

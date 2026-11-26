@@ -23,6 +23,15 @@ const (
 	moveToNote       = "to NOTE"
 )
 
+// The reasons a matched line is refused.
+const (
+	moveOccupied      = "occupied"
+	moveMissing       = "missing"
+	moveConflict      = "conflict"
+	moveDescribed     = "described"
+	moveSubstructures = "substructures"
+)
+
 var moveActions = map[string]string{
 	movePrependPlace: "PLAC",
 	moveToAddress:    "ADDR",
@@ -101,8 +110,9 @@ type moveRefusal struct {
 	// Reason is "occupied" (the event already has the line the action
 	// would make, named by Target), "missing" (the event has no PLAC to
 	// prepend to), "conflict" (the PLAC is itself moved, or takes another
-	// line too) or "substructures" (the line has lines under it, the first
-	// named by Target).
+	// line too), "described" (the PLAC has a FORM or TRAN, named by Target,
+	// that describes its old value) or "substructures" (the line has lines
+	// under it, the first named by Target).
 	Reason string `json:"reason"`
 	Target string `json:"target"`
 }
@@ -135,7 +145,7 @@ The table is tab-separated, with a header row naming its columns:
             prepend PLAC  it becomes the first element of the event's PLAC,
                           joined by ", ", and the line is removed; the MAP
                           under that PLAC is removed, its point being the
-                          old place's
+                          old place's, and its other lines are kept
             to ADDR       the line becomes the event's ADDR
             to PLAC       the line becomes the event's PLAC
             to NOTE       the line becomes a NOTE of the event, the prefix
@@ -163,6 +173,8 @@ exit code 1:
   missing        prepend PLAC on an event with no PLAC
   conflict       prepend PLAC to a PLAC that is itself moved, or that
                  another matched line is prepended to
+  described      prepend PLAC to a PLAC with a FORM or TRAN under it, which
+                 describes the old value and would not match the new one
   substructures  a matched line with lines under it other than its CONC and
                  CONT: no action says what becomes of them, and nothing is
                  dropped silently
@@ -304,7 +316,10 @@ func readMoveTable(name string) ([]moveRow, error) {
 		rows = append(rows, row)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	if columns == nil && len(errs) == 0 {
+		errs = append(errs, fmt.Sprintf("%s: no header row", name))
 	}
 	if len(errs) > 0 {
 		return nil, errors.New(strings.Join(errs, "\n"))
@@ -473,12 +488,12 @@ func refuseMoves(matches []moveMatch, table []moveRow) ([]moveRefusal, map[int]b
 	for j, m := range matches {
 		row := table[m.row]
 		target := moveActions[row.action]
-		refuse := func(reason, target string) {
+		refuse := func(reason, detail string) {
 			indexes[j] = true
-			refused = append(refused, moveRefusal{XRef: m.record.XRef, Line: m.line.LineNumber, Tag: m.line.Tag, Row: row.line, Reason: reason, Target: target})
+			refused = append(refused, moveRefusal{XRef: m.record.XRef, Line: m.line.LineNumber, Tag: m.line.Tag, Row: row.line, Reason: reason, Target: detail})
 		}
 		if sub := firstSubstructure(m.record, m.line); sub != nil {
-			refuse("substructures", sub.Tag)
+			refuse(moveSubstructures, sub.Tag)
 			continue
 		}
 		if taken[m.event] == nil {
@@ -489,13 +504,17 @@ func refuseMoves(matches []moveMatch, table []moveRow) ([]moveRefusal, map[int]b
 			plac := childTag(m.record, m.event, "PLAC")
 			switch {
 			case plac == nil:
-				refuse("missing", target)
+				refuse(moveMissing, target)
 			case moved[plac] || taken[m.event][target]:
-				refuse("conflict", target)
+				refuse(moveConflict, target)
+			case childTag(m.record, plac, "FORM") != nil:
+				refuse(moveDescribed, "FORM")
+			case childTag(m.record, plac, "TRAN") != nil:
+				refuse(moveDescribed, "TRAN")
 			}
 		case moveToAddress, moveToPlace:
 			if childTag(m.record, m.event, target) != nil || taken[m.event][target] {
-				refuse("occupied", target)
+				refuse(moveOccupied, target)
 			}
 		}
 		if row.action != moveToNote {
@@ -531,7 +550,11 @@ func applyMove(doc *gedcom.Document, m moveMatch, row moveRow) int {
 			return 0
 		}
 		maps := record.RemoveChildren(plac, "MAP")
-		record.SetFullValue(plac, record.FullValue(m.line)+", "+record.FullValue(plac), version)
+		value := record.FullValue(m.line)
+		if old := record.FullValue(plac); old != "" {
+			value += ", " + old
+		}
+		record.SetFullValue(plac, value, version)
 		if i := slices.Index(record.Tags, m.line); i >= 0 {
 			record.Tags = slices.Delete(record.Tags, i, i+len(record.Subtree(m.line)))
 		}
@@ -547,12 +570,14 @@ func applyMove(doc *gedcom.Document, m moveMatch, row moveRow) int {
 	return 0
 }
 
-// moveRefusalText is how the text report names each refusal reason.
-var moveRefusalText = map[string]string{
-	"occupied":      "event has %s",
-	"missing":       "event has no %s",
-	"conflict":      "event's %s is moved, or prepended to twice",
-	"substructures": "line has %s under it",
+// moveRefusalText is how the text report names each refusal reason, given
+// the refusal's Target.
+var moveRefusalText = map[string]func(target string) string{
+	moveOccupied:      func(t string) string { return "event has " + t },
+	moveMissing:       func(t string) string { return "event has no " + t },
+	moveConflict:      func(t string) string { return "event's " + t + " is moved, or prepended to twice" },
+	moveDescribed:     func(t string) string { return "event's PLAC has " + t + " under it" },
+	moveSubstructures: func(t string) string { return "line has " + t + " under it" },
 }
 
 // writeMoveValueText writes a summary line, one line per row, the rows that
@@ -580,7 +605,7 @@ func writeMoveValueText(w io.Writer, r *moveValueReport) error {
 		}
 	}
 	for _, f := range r.Refused {
-		fmt.Fprintf(&b, "  "+moveRefusalText[f.Reason]+"\t%s\tline %d\t%s\trow %d\n", f.Target, oneLine(f.XRef), f.Line, f.Tag, f.Row)
+		fmt.Fprintf(&b, "  %s\t%s\tline %d\t%s\trow %d\n", moveRefusalText[f.Reason](f.Target), oneLine(f.XRef), f.Line, f.Tag, f.Row)
 	}
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return err

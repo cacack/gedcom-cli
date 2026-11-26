@@ -643,8 +643,9 @@ wrote out.ged: 4 lines moved, 1 MAP removed, 3 records changed
 `prepend PLAC` removes the `MAP` under that `PLAC`, since its point was the
 old place's. A line the action cannot be applied to is reported with its
 record and line, and nothing is written: `to ADDR` or `to PLAC` on an event
-that has one already, `prepend PLAC` on an event with no `PLAC`, or a line
-with substructures no action accounts for. The command decides nothing:
+that has one already, `prepend PLAC` on an event with no `PLAC` or to a
+`PLAC` with a `FORM` or `TRAN` that describes the old value, or a line with
+substructures no action accounts for. The command decides nothing:
 which values are building names is the table's to say. The output is
 validated before it is written, as `retag` does, and a table with no rows
 writes the file byte-identical.
