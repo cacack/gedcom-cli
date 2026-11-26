@@ -124,6 +124,9 @@ func TestRedactLiving(t *testing.T) {
 		// Only Ann's and Bob's lines, and the family of theirs, are counted.
 		{"list tags", []string{"list", living, "tags"}, ExitOK, []string{"2\tINDI.NAME\n", "1\tFAM.MARR.PLAC\n"}},
 		{"list values", []string{"list", "--format", "json", "--tag", "INDI.BIRT.PLAC", living, "values"}, ExitOK, []string{`"value": "Oldtown, Example County"`, `"count": 1`}},
+		// Cleo's (@I3@) birthplace is hidden; Ann's shows.
+		{"list with", []string{"list", "--with", "INDI.BIRT.PLAC", "--with", "INDI.RESI.ADDR", living, "indi"}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue\t\t\n", "\tOldtown, Example County\t"}},
+		{"list with json", []string{"list", "--format", "json", "--with", "INDI.BIRT.PLAC", living, "indi"}, ExitOK, []string{`"INDI.BIRT.PLAC": []`, `"Oldtown, Example County"`}},
 		{"list note", []string{"list", living, "note"}, ExitOK, []string{"@N1@\tLiving\n"}},
 		{"list note json", []string{"list", "--format", "json", living, "note"}, ExitOK, []string{`"xref": "@N1@"`, `"text": "Living"`}},
 		{"extract", []string{"extract", living, "I1", "I3", "I5", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living", "1 CHIL @I5@", "Ann /Example/", "1 JUN 1925"}},

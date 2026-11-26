@@ -202,6 +202,21 @@ gedcom list --tag INDI.EVEN.TYPE family.ged values
 2	INDI._UID
 ```
 
+To see such a value beside the record that holds it, `--with <path>` adds a
+column per path to a record type's listing, after its own fields and in the
+order given. A column holds every value at the path in file order, joined by
+` | `, with `CONT` lines folded in (as spaces in text); it is empty when the
+record has none. In JSON each row gets a `with` object from each path to an
+array of its values:
+
+```sh
+gedcom list --with OBJE.FILE.FORM._SIZE --with OBJE._OID family.ged obje
+```
+
+```text
+@O1@	Ada, 1920	ada.jpg	image/jpeg	20480	0001
+```
+
 ### ancestors and descendants
 
 Walk one person's line by generation (1 is parents or children, 2

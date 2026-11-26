@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -17,14 +18,23 @@ import (
 // tags for the tag paths and values for the distinct values of one tag path.
 var listTypes = []string{"indi", "fam", "sour", "repo", "obje", "subm", "note", "snote", "names", "plac", "tags", "values"}
 
+// recordTypes are the listTypes that list records. Each one's record type is
+// the type in upper case (indi lists INDI records).
+var recordTypes = []string{"indi", "fam", "sour", "repo", "obje", "subm", "note", "snote"}
+
+// withSeparator joins, in text output, the values a record has at one --with
+// path.
+const withSeparator = " | "
+
 // listOptions are list's flags beyond --format: limit for every type, vendor
-// for tags, path, the --tag of values split at its dots, and repeated for
-// names.
+// for tags, path, the --tag of values split at its dots, repeated for names,
+// and with, the --with paths of the record types, as given.
 type listOptions struct {
 	limit    int
 	vendor   bool
 	path     []string
 	repeated bool
+	with     []string
 }
 
 // row is one listed record, place, tag path or value. Its JSON form is the
@@ -116,6 +126,41 @@ type valueRow struct {
 	Value string `json:"value"`
 }
 
+// withRow is a record's row with, after its own fields, the record's values at
+// each --with path: every line at the path, in file order, its CONT and CONC
+// lines folded in. Its JSON form is the row's with a "with" key, an object
+// from each path to its values.
+type withRow struct {
+	row
+	paths  []string
+	values [][]string
+}
+
+func (r withRow) fields() []string {
+	fields := r.row.fields()
+	for _, values := range r.values {
+		fields = append(fields, strings.Join(values, withSeparator))
+	}
+	return fields
+}
+
+func (r withRow) MarshalJSON() ([]byte, error) {
+	own, err := json.Marshal(r.row)
+	if err != nil {
+		return nil, err
+	}
+	with := make(map[string][]string, len(r.paths))
+	for i, path := range r.paths {
+		with[path] = r.values[i]
+	}
+	values, err := json.Marshal(with)
+	if err != nil {
+		return nil, err
+	}
+	// own is a JSON object with at least an xref: add the key before its }.
+	return slices.Concat(own[:len(own)-1], []byte(`,"with":`), values, []byte("}")), nil
+}
+
 func (r indiRow) fields() []string {
 	return []string{r.XRef, r.Name, r.Birth, r.Death, strconv.FormatBool(r.Living)}
 }
@@ -168,6 +213,18 @@ any record by xref.
 Dates are printed as written in the file. An absent value is empty. In text
 output, control characters in a value (a line break in a multi-line title, a
 tab) are printed as spaces; JSON keeps the value as it is.
+
+--with adds a column for a tag path, as tags prints it, under the listed
+record type (OBJE._OID for obje); it may be given more than once. The added
+columns follow the type's own fields, in the order the paths are given. Each
+holds the record's values at the path: the value of every line there, in file
+order, with its CONT lines folded in as line breaks and its CONC lines
+joined on. A record with no line at the path has an empty value. In text
+output several values are joined by "` + withSeparator + `" and line breaks
+are printed as spaces; in JSON a row has a "with" object from each path to
+an array of its values, empty when there are none. --with applies to the record
+types only, and a path under another record type is an error. A record
+--redact-living hides has no values.
 
 For obje, title and format are those of the first FILE. A record that puts
 TITL and FORM beside FILE instead of under it (the GEDCOM 5.5 layout) lists
@@ -228,6 +285,7 @@ with no dates at all is presumed living.`,
   gedcom list family.ged plac
   gedcom list --vendor family.ged tags
   gedcom list --tag INDI.EVEN.TYPE family.ged values
+  gedcom list --with OBJE.FILE.FORM._SIZE --with OBJE._OID family.ged obje
   gedcom list --format json family.ged indi | jq '.[] | select(.name | test("/Example/"))'
   gedcom list --format json family.ged indi | jq '.[] | select(.living | not)'`,
 		Args: exactArgs(2),
@@ -275,6 +333,18 @@ with no dates at all is presumed living.`,
 					return usageError{fmt.Errorf("invalid --tag %q: want a record type and the tags below it, joined by dots, such as INDI.SEX", tag)}
 				}
 			}
+			if opts.with, err = cmd.Flags().GetStringArray("with"); err != nil {
+				return err
+			}
+			if len(opts.with) > 0 && !slices.Contains(recordTypes, kind) {
+				return usageError{fmt.Errorf("--with applies only to the record types (%s), not %s", strings.Join(recordTypes, ", "), kind)}
+			}
+			for _, with := range opts.with {
+				path := strings.Split(with, ".")
+				if len(path) < 2 || slices.Contains(path, "") || path[0] != strings.ToUpper(kind) {
+					return usageError{fmt.Errorf("invalid --with %q: want a tag path under %s, such as %[2]s.CHAN.DATE", with, strings.ToUpper(kind))}
+				}
+			}
 			doc, living, err := openDocument(cmd, args[0])
 			if err != nil {
 				return err
@@ -290,6 +360,7 @@ with no dates at all is presumed living.`,
 	cmd.Flags().Bool("vendor", false, "for tags, list only the paths with an extension tag (starting with _)")
 	cmd.Flags().Bool("repeated", false, "for names, list only the names equal to an earlier name of the same person")
 	cmd.Flags().String("tag", "", "for values, the tag path whose values to list, such as INDI.SEX")
+	cmd.Flags().StringArray("with", nil, "for a record type, add a column with each record's values at this tag path, such as OBJE._OID; repeatable")
 	return cmd
 }
 
@@ -299,30 +370,58 @@ func listRows(doc *gedcom.Document, living map[*gedcom.Individual]bool, kind str
 	limit := opts.limit
 	switch kind {
 	case "indi":
-		return rowsOf(doc.Individuals(), limit, func(i *gedcom.Individual) row { return indiRowOf(i, living[i]) })
+		return recordRows(doc, (*gedcom.Record).GetIndividual, func(i *gedcom.Individual) row { return indiRowOf(i, living[i]) }, opts)
 	case "fam":
-		return rowsOf(doc.Families(), limit, newFamRow)
+		return recordRows(doc, (*gedcom.Record).GetFamily, newFamRow, opts)
 	case "sour":
-		return rowsOf(doc.Sources(), limit, newSourRow)
+		return recordRows(doc, (*gedcom.Record).GetSource, newSourRow, opts)
 	case "repo":
-		return rowsOf(doc.Repositories(), limit, newRepoRow)
+		return recordRows(doc, (*gedcom.Record).GetRepository, newRepoRow, opts)
 	case "subm":
-		return rowsOf(doc.Submitters(), limit, newSubmRow)
+		return recordRows(doc, (*gedcom.Record).GetSubmitter, newSubmRow, opts)
 	case "note":
-		return rowsOf(doc.Notes(), limit, newNoteRow)
+		return recordRows(doc, (*gedcom.Record).GetNote, newNoteRow, opts)
 	case "snote":
-		return rowsOf(doc.SharedNotes(), limit, newSharedNoteRow)
+		return recordRows(doc, (*gedcom.Record).GetSharedNote, newSharedNoteRow, opts)
+	case "obje":
+		return recordRows(doc, (*gedcom.Record).GetMediaObject, newObjeRow, opts)
 	case "names":
 		return nameRows(doc, opts.repeated, limit)
 	case "plac":
 		return placeRows(doc, limit)
 	case "tags":
 		return tagRows(doc, opts.vendor, limit)
-	case "values":
-		return valueRows(doc, opts.path, limit)
 	default:
-		return rowsOf(doc.MediaObjects(), limit, newObjeRow)
+		return valueRows(doc, opts.path, limit)
 	}
+}
+
+// recordRows maps the records of doc that get returns an entity for, in file
+// order, to rows, and returns at most opts.limit of them; a limit of 0 means
+// all of them. With opts.with, each row is a withRow.
+func recordRows[T any](doc *gedcom.Document, get func(*gedcom.Record) (T, bool), toRow func(T) row, opts listOptions) []row {
+	var records []*gedcom.Record
+	for _, record := range doc.Records {
+		if _, ok := get(record); ok {
+			records = append(records, record)
+		}
+	}
+	return rowsOf(records, opts.limit, func(record *gedcom.Record) row {
+		entity, _ := get(record)
+		r := toRow(entity)
+		if len(opts.with) == 0 {
+			return r
+		}
+		w := withRow{row: r, paths: opts.with}
+		for _, with := range opts.with {
+			values := []string{}
+			for _, tag := range record.FindAll(strings.Split(with, ".")[1:]...) {
+				values = append(values, record.FullValue(tag))
+			}
+			w.values = append(w.values, values)
+		}
+		return w
+	})
 }
 
 // rowsOf maps at most limit entities to rows; a limit of 0 means all of them.
