@@ -534,6 +534,99 @@ func TestListValues(t *testing.T) {
 	}
 }
 
+// withMedia is the media record of the issue asking for --with, a second with
+// a note continued and repeated, and a third with none of those lines.
+const withMedia = "0 HEAD\n1 SOUR gedcom-cli-test\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n" +
+	"0 @O1@ OBJE\n1 FILE ada.jpg\n2 FORM image/jpeg\n3 _SIZE 20480\n2 TITL Ada, 1920\n1 _OID 0001\n" +
+	"0 @O2@ OBJE\n1 FILE ben.jpg\n1 NOTE First\n2 CONT second\n2 CONC  line\n1 NOTE Other\n" +
+	"0 @O3@ OBJE\n1 FILE cora.jpg\n0 TRLR\n"
+
+func TestListWith(t *testing.T) {
+	path := writeTemp(t, "media.ged", withMedia)
+	// The columns follow the type's own fields in the order given; a record
+	// without the line has an empty value, several values are joined, and a
+	// line break is a space.
+	code, stdout, stderr := run(t, "list", "--with", "OBJE.FILE.FORM._SIZE", "--with", "OBJE._OID", "--with", "OBJE.NOTE", path, "obje")
+	want := "@O1@\tAda, 1920\tada.jpg\timage/jpeg\t20480\t0001\t\n" +
+		"@O2@\t\tben.jpg\t\t\t\tFirst second line | Other\n" +
+		"@O3@\t\tcora.jpg\t\t\t\t\n"
+	if code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout:\n%q\nwant:\n%q", code, stderr, stdout, want)
+	}
+	code, stdout, stderr = run(t, "list", "--format", "json", "--limit", "2", "--with", "OBJE._OID", "--with", "OBJE.NOTE", path, "obje")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("json: exit = %d, stderr = %q", code, stderr)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	wantJSON := []map[string]any{
+		{"xref": "@O1@", "title": "Ada, 1920", "file": "ada.jpg", "format": "image/jpeg",
+			"with": map[string]any{"OBJE._OID": []any{"0001"}, "OBJE.NOTE": []any{}}},
+		{"xref": "@O2@", "title": "", "file": "ben.jpg", "format": "",
+			"with": map[string]any{"OBJE._OID": []any{}, "OBJE.NOTE": []any{"First\nsecond line", "Other"}}},
+	}
+	if !reflect.DeepEqual(got, wantJSON) {
+		t.Errorf("json: got %v, want %v", got, wantJSON)
+	}
+	// Without --with, a row has no with key.
+	_, stdout, _ = run(t, "list", "--format", "json", path, "obje")
+	if strings.Contains(stdout, `"with"`) {
+		t.Errorf("json without --with has a with key:\n%s", stdout)
+	}
+	// Every record type takes it, each column holding its own path's values.
+	for _, tt := range []struct {
+		kind string
+		with []string
+		want string
+	}{
+		{"indi", []string{"INDI.SEX", "INDI.BIRT.PLAC"}, "@I1@\tCora /Sample/\t3 MAR 1901\t14 NOV 1978\tfalse\tF\tSpringfield, Example County\n" +
+			"@I2@\tDell /Sample/\t21 JUL 1899\t2 FEB 1960\tfalse\tM\t\n" +
+			"@I3@\tEdie /Sample/\t9 SEP 1925\t\ttrue\tF\t\n"},
+		{"fam", []string{"FAM.CHIL", "FAM.MARR.PLAC"}, "@F1@\t@I2@\t@I1@\t12 JUN 1923\t1\t@I3@\t\n"},
+		{"sour", []string{"SOUR.REPO"}, "@S1@\tSample Family Bible\tInvented Author\t@R1@\n"},
+		{"repo", []string{"REPO.NAME"}, "@R1@\tExample County Archive\tExample County Archive\n"},
+		{"subm", []string{"SUBM.NAME"}, "@U1@\tTest Submitter\tTest Submitter\n"},
+	} {
+		args := []string{"list"}
+		for _, with := range tt.with {
+			args = append(args, "--with", with)
+		}
+		code, stdout, stderr = run(t, append(args, records, tt.kind)...)
+		if code != ExitOK || stderr != "" || stdout != tt.want {
+			t.Errorf("%s: exit = %d, stderr = %q, stdout:\n%q\nwant:\n%q", tt.kind, code, stderr, stdout, tt.want)
+		}
+	}
+	for kind, header := range map[string]string{"note": "5.5.1\n1 CHAR UTF-8", "snote": "7.0"} {
+		tag := strings.ToUpper(kind)
+		notes := writeTemp(t, kind+".ged", "0 HEAD\n1 GEDC\n2 VERS "+header+"\n"+
+			"0 @N1@ "+tag+" First note\n1 REFN 7\n0 @N2@ "+tag+" Another\n0 TRLR\n")
+		code, stdout, stderr = run(t, "list", "--with", tag+".REFN", notes, kind)
+		if want := "@N1@\tFirst note\t7\n@N2@\tAnother\t\n"; code != ExitOK || stderr != "" || stdout != want {
+			t.Errorf("%s: exit = %d, stderr = %q, stdout = %q, want %q", kind, code, stderr, stdout, want)
+		}
+	}
+}
+
+func TestListWithWrongPath(t *testing.T) {
+	path := writeTemp(t, "media.ged", withMedia)
+	for _, with := range []string{"INDI.NAME", "OBJE", "OBJE..FILE", "obje._OID"} {
+		code, stdout, stderr := run(t, "list", "--with", "OBJE._OID", "--with", with, path, "obje")
+		if code != ExitUsage || stdout != "" || !strings.Contains(stderr, `"`+with+`"`) {
+			t.Errorf("--with %s: exit = %d, stdout = %q, stderr = %q; want %d naming the path", with, code, stdout, stderr, ExitUsage)
+		}
+	}
+	code, stdout, stderr := run(t, "list", "--with", "OBJE._OID", "--with", "OBJE._OID", path, "obje")
+	if code != ExitUsage || stdout != "" || !strings.Contains(stderr, `"OBJE._OID"`) {
+		t.Errorf("repeated path: exit = %d, stdout = %q, stderr = %q; want %d naming the path", code, stdout, stderr, ExitUsage)
+	}
+	code, stdout, stderr = run(t, "list", "--with", "INDI.NAME", path, "names")
+	if code != ExitUsage || stdout != "" || !strings.Contains(stderr, "--with") {
+		t.Errorf("names: exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+}
+
 // named is a file whose first person has three names: the second repeats the
 // first but for case, spacing and punctuation and carries other citations,
 // the third differs. Its second person has one name.
@@ -613,6 +706,17 @@ func TestListNamesRepeated(t *testing.T) {
 	}
 }
 
+func TestListNamesSameAsWords(t *testing.T) {
+	// Values are equal when they hold the same words in the same order:
+	// "OBrien" is one word and "O'Brien" two, and order counts.
+	path := writeTemp(t, "words.ged", "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n"+
+		"0 @I1@ INDI\n1 NAME Ann /O'Brien/\n1 NAME Ann /OBrien/\n1 NAME O'Brien Ann\n1 NAME ANN O BRIEN\n0 TRLR\n")
+	code, stdout, stderr := run(t, "list", "--repeated", path, "names")
+	if want := "@I1@\t4\tANN O BRIEN\t\t\t\t\t\t0\t1\n"; code != ExitOK || stderr != "" || stdout != want {
+		t.Errorf("exit = %d, stderr = %q, stdout = %q, want %q", code, stderr, stdout, want)
+	}
+}
+
 func TestListNamesRedactLiving(t *testing.T) {
 	// Both people in named have no dates, so both are presumed living: each
 	// lists one name, Living, and no name is repeated.
@@ -685,7 +789,8 @@ func TestListHelpHasExample(t *testing.T) {
 	}
 	for _, want := range []string{"gedcom list family.ged indi", "gedcom list family.ged plac", "plac   count, place",
 		"subm   xref, name", "snote  xref, text", "tags   count, path", "values count, value", "but SUBN",
-		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", "ignoring case and removing every space and\npunctuation character", "gedcom list --repeated family.ged names"} {
+		"names  xref, position, value, givn, surn, nsfx, nick, type, citations", "same_as", samePersonalNameHelp, "repeated-names", "NAME_PART_MISMATCH", "gedcom list --repeated family.ged names",
+		"--with", "in the order the paths are given", "CONT lines folded in", `joined by " | "`, `"with" object`} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help lacks %q:\n%s", want, stdout)
 		}

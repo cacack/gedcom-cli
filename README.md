@@ -7,7 +7,7 @@ terminal and by AI coding agents. See [CONSTITUTION.md](CONSTITUTION.md) for
 what it is and is not trying to be.
 
 **Status: early.** The commands so far are `info`, `get`, `list`,
-`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `repeated-events`, `diff` and `combine`. Flags and JSON output may change until v1.0.
+`ancestors`, `descendants`, `relatives`, `media`, `places`, `validate`, `duplicates`, `extract`, `put`, `put-header`, `delete`, `name`, `retag`, `convert`, `merge-people`, `merge-families`, `merge-sources`, `merge-repositories`, `repeated-events`, `repeated-names`, `diff` and `combine`. Flags and JSON output may change until v1.0.
 
 ## Install
 
@@ -45,6 +45,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | --- | --- |
 | [`info`](#info) | Summarize a file: version, encoding, source system, record counts |
 | [`get`](#get) | Print records by xref, or the header |
+| [`refs`](#refs) | List the pointers to records by xref: who uses this source, media record or person |
 | [`list`](#list) | List the records of one type, or the people's names, the places, tag paths or one tag's values, one per line |
 | [`ancestors`](#ancestors-and-descendants) | List a person's ancestors by generation |
 | [`descendants`](#ancestors-and-descendants) | List a person's descendants by generation |
@@ -54,6 +55,7 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`diff`](#diff) | Compare two versions of a file record by record |
 | [`media check`](#media-check) | Report whether each `FILE` reference resolves under a media folder |
 | [`media add`](#media-add) | Link a media file from a record, writing a new file |
+| [`media set`](#media-set) | Set the `FILE` of an existing `OBJE` record, writing a new file |
 | [`places apply`](#places-apply) | Rewrite `PLAC` values and set their coordinates from a place table, writing a new file |
 | [`extract`](#extract) | Write a branch of the tree to its own file |
 | [`put`](#put) | Replace records by xref, or add new ones, writing a new file |
@@ -61,10 +63,12 @@ go install github.com/cacack/gedcom-cli/cmd/gedcom@latest
 | [`delete`](#delete) | Remove records by xref, writing a new file |
 | [`name`](#name) | Edit one of a person's names: reorder it, set its TYPE, value or NICK |
 | [`retag`](#retag) | Give every line at one tag path a new tag, writing a new file |
+| [`move-value`](#move-value) | Move event lines' values into their `PLAC`, `ADDR` or a `NOTE` from a table, writing a new file |
 | [`convert`](#convert) | Rewrite a file as GEDCOM 5.5.1 or 7.0, in UTF-8 |
 | [`merge-people`](#merge-people-and-merge-families) | Fold one individual into another, writing a new file |
 | [`merge-families`](#merge-people-and-merge-families) | Fold one family into another, writing a new file |
 | [`repeated-events`](#repeated-events) | Report events a record holds twice, and fold them into one, writing a new file |
+| [`repeated-names`](#repeated-names) | Report names a person holds twice, and fold them into one, writing a new file |
 | [`merge-sources`](#merge-sources-and-merge-repositories) | Fold one source into another, writing a new file |
 | [`merge-repositories`](#merge-sources-and-merge-repositories) | Fold one repository into another, writing a new file |
 | [`combine`](#combine) | Join files into one, writing a new file |
@@ -115,6 +119,30 @@ With `--format json` each record is gedcom-go's own shape for it, plus a
 header). `put` takes records back; [`put-header`](#put-header) takes the
 header back.
 
+### refs
+
+Lists the pointers to records by xref, one per line: the record holding it
+(`-` for the header), the tag path to it and the record it points at. It is
+the list [`delete`](#delete) refuses with, asked for without writing
+anything: who uses this source, this media record, this repository, before a
+merge or a cleanup.
+
+```sh
+gedcom refs family.ged @O1@
+gedcom list --format json family.ged obje | jq -r '.[].xref' | gedcom refs family.ged -
+```
+
+```text
+@I1@	INDI.OBJE	@O1@
+@F1@	FAM.OBJE	@O1@
+```
+
+A record nothing points at lists nothing and exits `0`; an xref the file does
+not define exits `1`. `-` reads xrefs from stdin as for `get`. With
+`--format json` each pointer has the keys `delete` reports: `from`, `path`,
+`to`. The output is xrefs and tag paths only, so `--redact-living` does not
+change it.
+
 ### list
 
 Prints one line per record of a type (`indi`, `fam`, `sour`, `repo`, `obje`,
@@ -147,10 +175,13 @@ file order, so a person's later names show too: xref, the name's position
 among the person's names, the value, the `GIVN`, `SURN`, `NSFX`, `NICK` and
 `TYPE` under it as written (empty when absent), the number of citations under
 it, and `same_as`, the position of the person's first earlier name equal to
-this one (0 if none). Two names are equal when their values match after
-ignoring case and removing spaces and punctuation, so `John /Smith/ Jr.`
-equals `john smith jr`. `--repeated` keeps only the names with a `same_as`,
-the repeats to fold:
+this one (0 if none). Two names are equal, by gedcom-go's rule, when their
+values hold the same words in the same order, case ignored, with spaces,
+punctuation and the surname slashes only separating words: `John /Smith/ Jr.`
+equals `john  smith, jr`, but `O'Brien` does not equal `OBrien`.
+`--repeated` keeps only the names with a `same_as`. To fold repeated names
+see [`repeated-names`](#repeated-names); `validate --style NAME_PART_MISMATCH`
+reports a `GIVN` or `SURN` that disagrees with its name's value:
 
 ```sh
 gedcom list family.ged names
@@ -194,6 +225,21 @@ gedcom list --tag INDI.EVEN.TYPE family.ged values
 14	INDI._MILT
 14	INDI._MILT.DATE
 2	INDI._UID
+```
+
+To see such a value beside the record that holds it, `--with <path>` adds a
+column per path to a record type's listing, after its own fields and in the
+order given. A column holds every value at the path in file order, joined by
+` | `, with `CONT` lines folded in (as spaces in text); it is empty when the
+record has none. In JSON each row gets a `with` object from each path to an
+array of its values:
+
+```sh
+gedcom list --with OBJE.FILE.FORM._SIZE --with OBJE._OID family.ged obje
+```
+
+```text
+@O1@	Ada, 1920	ada.jpg	image/jpeg	20480	0001
 ```
 
 ### ancestors and descendants
@@ -417,8 +463,10 @@ unreferenced			photos/cara.jpg
 
 Links a file from an individual, family or source, reusing the `OBJE` record
 with that path or creating one, and writes the result to a new file. Running
-it again changes nothing. A tab-separated file of links is applied whole or
-not at all:
+it again changes nothing. A tab-separated file of links (xref, path, an
+optional title and an optional `FORM`) is applied whole or not at all. A
+row's `FORM` is its fourth column, else the one its extension gives; with
+`--batch`, `--form` only fills in rows that have neither:
 
 ```sh
 gedcom media add family.ged --to @I1@ --path photos/ada.jpg --title "Ada, 1920" -o out.ged
@@ -427,6 +475,26 @@ gedcom media add family.ged --root media --batch links.tsv -o out.ged
 
 ```text
 @I1@	@O2@	created	photos/ada.jpg
+```
+
+### media set
+
+Sets the `FILE`, and with `--form` the `FORM`, of an `OBJE` record that
+already exists, such as one an export left with an empty `FILE`, and writes
+the result to a new file. The record keeps its xref, its other lines and every
+link to it. A `FILE` that holds another path is replaced only with
+`--replace`, and a record with more than one `FILE` is refused. `--root`
+checks each path as `media add` does. A tab-separated file of xref, path and
+an optional `FORM` is applied whole or not at all:
+
+```sh
+gedcom media set family.ged --root media --obje @O1@ --path photos/ada.jpg -o out.ged
+gedcom media set family.ged --root media --batch files.tsv -o out.ged
+```
+
+```text
+@O1@	set	photos/ada.jpg
+@O2@	unchanged	photos/ben.jpg
 ```
 
 ### places apply
@@ -613,6 +681,38 @@ written, as `name` does: an edit that adds a finding the input did not have,
 such as an `EXID` under a citation, where GEDCOM 7.0 permits none, writes
 nothing and exits `1`. A path no line is at writes the file byte-identical.
 
+### move-value
+
+Moves a value written on the wrong line of an event to the line it belongs
+on, as a table says: an `ADDR` that is a building's name to the head of the
+`PLAC`, a `PLAC` that is a street address to `ADDR`, or a `PLAC` that is
+neither to a `NOTE` that keeps the words. The table is tab-separated with a
+header row: `path` (a tag path as `list <file> tags` prints it, or `*.PLAC`
+for a `PLAC` under any event), `value` (the whole value, matched byte for
+byte), `action` (`prepend PLAC`, `to ADDR`, `to PLAC` or `to NOTE`) and, for
+`to NOTE`, a `prefix`:
+
+```sh
+gedcom move-value family.ged moves.tsv -o out.ged
+```
+
+```text
+wrote out.ged: 4 lines moved, 1 MAP removed, 3 records changed
+  row 2	INDI.BIRT.ADDR	Example General Hospital	prepend PLAC	1 moved, 1 MAP removed, 1 record changed
+  row 3	*.PLAC	at home	to NOTE	3 moved, 0 MAP removed, 3 records changed
+  unmatched	row 4	*.ADDR	Nowhere
+```
+
+`prepend PLAC` removes the `MAP` under that `PLAC`, since its point was the
+old place's. A line the action cannot be applied to is reported with its
+record and line, and nothing is written: `to ADDR` or `to PLAC` on an event
+that has one already, `prepend PLAC` on an event with no `PLAC` or to a
+`PLAC` with a `FORM` or `TRAN` that describes the old value, or a line with
+substructures no action accounts for. The command decides nothing:
+which values are building names is the table's to say. The output is
+validated before it is written, as `retag` does, and a table with no rows
+writes the file byte-identical.
+
 ### convert
 
 Rewrites a file as GEDCOM 5.5.1 or 7.0 with gedcom-go's converter, to a new
@@ -705,6 +805,29 @@ With `--fold`, the report lists each event removed as `folded`, with the
 record, its lines and those of the event it was folded into, as
 `merge-people` does. Records with nothing to fold are written as read, and
 folding the output again folds nothing.
+
+### repeated-names
+
+Reports the names one individual holds twice, often with different citations
+under each copy, and with `--fold` folds each into the first, writing a new
+file. Two names are the same when their values are equal by the rule
+`list names` gives `same_as` by, their `TYPE`s agree (or neither has one),
+and each name piece (`GIVN`, `SURN`, `NSFX` and the rest) both have is
+written identically; a piece only one has does not keep them apart.
+`gedcom repeated-names --help` gives the full rule:
+
+```sh
+gedcom repeated-names family.ged
+gedcom repeated-names --fold family.ged -o folded.ged
+```
+
+```text
+repeated	@I1@	NAME	1 NAME John /Example/ | 2 SOUR @S1@ | 3 PAGE 1	1 NAME john example | 2 SOUR @S1@ | 3 PAGE 2
+```
+
+The first name keeps its lines and gains each line of the others it lacks,
+so a citation both hold line for line is kept once. The report and the rest
+of the file behave as for `repeated-events`.
 
 ### merge-sources and merge-repositories
 
@@ -834,11 +957,12 @@ These hold for every command, so scripts and agents can rely on them:
   and `diff` lists a changed hidden record with its lines replaced by
   `Living`. A command that writes a file always redacts its report, but only
   `extract` and `combine`, which make a new file to share, redact the file
-  too: `put`, `put-header`, `delete`, `name`, `retag`, `media add`, `places apply`,
-  the merge commands, `repeated-events` and `convert` edit or rewrite the whole tree and write
+  too: `put`, `put-header`, `delete`, `name`, `retag`, `move-value`, `media add`, `media set`, `places apply`,
+  the merge commands, `repeated-events`, `repeated-names` and `convert` edit or rewrite the whole tree and write
   it unredacted. Source, media, repository and submitter records are not
   redacted, even when a hidden record cites them, and neither is the header
-  (`get HEAD`): check their titles, file names and addresses yourself. Use it before pasting
+  (`get HEAD`): check their titles, file names and addresses yourself. `refs` prints xrefs and
+  tag paths only, and prints them all. Use it before pasting
   output into an issue, a forum post or a chat.
 - **Who is presumed living** is gedcom-go's rule: no death, burial or
   cremation, and no date of the person's, of a family they are a spouse in or

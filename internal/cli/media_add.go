@@ -26,6 +26,7 @@ type mediaRow struct {
 	to    string
 	path  string
 	title string
+	form  string // the row's own FORM, "" for none
 }
 
 // mediaAdded is what media add did for one row.
@@ -57,9 +58,13 @@ With --root, the path must be relative, stay inside --root and name a file
 there. The path is written as given, with \ turned into /.
 
 --batch reads rows from a tab-separated file instead of --to and --path:
-xref, path and an optional title. Blank lines and lines starting with # are
-skipped. Every row is applied or none is: any row that names an unknown
-record or a path outside --root is reported, by line, and nothing is written.
+xref, path, an optional title and an optional FORM (leave the title column
+empty to give a FORM with no title). A row's FORM is its own fourth column,
+else the one its extension gives; --form with --batch only applies to rows
+that give no FORM and whose extension gives none. Blank lines and lines
+starting with # are skipped. Every row is applied or none is: any row that
+names an unknown record, a path outside --root or a file whose FORM cannot be
+told is reported, by line, and nothing is written.
 
 Text output is one tab-separated line per row: xref, object, action, path.
 The action is "created" (a new OBJE record), "linked" (an existing one, newly
@@ -87,6 +92,7 @@ Records not involved are written exactly as they were read.`,
 				return err
 			}
 			var rows []mediaRow
+			var fallback string // with --batch, --form only fills in rows with no FORM
 			switch {
 			case batch != "" && (to != "" || mediaPath != "" || title != ""):
 				return usageError{errors.New("--batch cannot be combined with --to, --path or --title")}
@@ -94,10 +100,11 @@ Records not involved are written exactly as they were read.`,
 				if rows, err = readMediaBatch(batch); err != nil {
 					return err
 				}
+				fallback = form
 			case to == "" || mediaPath == "":
 				return usageError{errors.New("give --to and --path, or --batch")}
 			default:
-				rows = []mediaRow{{to: to, path: mediaPath, title: title}}
+				rows = []mediaRow{{to: to, path: mediaPath, title: title, form: form}}
 			}
 
 			res, err := decodeForWrite(args[0])
@@ -105,7 +112,7 @@ Records not involved are written exactly as they were read.`,
 				return err
 			}
 			doc := res.Document
-			added, err := addMedia(doc, rows, form, root)
+			added, err := addMedia(doc, rows, fallback, root)
 			if err != nil {
 				return err
 			}
@@ -131,41 +138,45 @@ Records not involved are written exactly as they were read.`,
 	cmd.Flags().String("to", "", "xref of the individual, family or source to link the media from")
 	cmd.Flags().String("path", "", "the media file's path, as FILE will hold it")
 	cmd.Flags().String("title", "", "title of a new OBJE record's file (TITL)")
-	cmd.Flags().String("form", "", "FORM of a new OBJE record's file; default from the extension")
-	cmd.Flags().String("batch", "", "tab-separated file of rows: xref, path, optional title")
+	cmd.Flags().String("form", "", "FORM of a new OBJE record's file; default from the extension (with --batch, only for rows whose FORM cannot be told otherwise)")
+	cmd.Flags().String("batch", "", "tab-separated file of rows: xref, path, optional title, optional FORM")
 	cmd.Flags().String("root", "", "media folder each path must name a file in")
 	return cmd
 }
 
 // readMediaBatch reads the rows of a --batch file.
 func readMediaBatch(name string) ([]mediaRow, error) {
-	batch, err := readBatch(name, 2, 3, "xref, path and an optional title")
+	batch, err := readBatch(name, 2, 4, "xref, path, an optional title and an optional FORM")
 	if err != nil {
 		return nil, err
 	}
 	rows := make([]mediaRow, 0, len(batch))
 	for _, b := range batch {
 		row := mediaRow{line: b.line, to: b.fields[0], path: b.fields[1]}
-		if len(b.fields) == 3 {
+		if len(b.fields) >= 3 {
 			row.title = b.fields[2]
+		}
+		if len(b.fields) == 4 {
+			row.form = b.fields[3]
 		}
 		rows = append(rows, row)
 	}
 	return rows, nil
 }
 
-// rowError prefixes a row's error with where the row came from.
-func rowError(row mediaRow, format string, a ...any) string {
+// rowError prefixes a row's error with its --batch line, when it has one.
+func rowError(line int, format string, a ...any) string {
 	msg := fmt.Sprintf(format, a...)
-	if row.line > 0 {
-		return fmt.Sprintf("line %d: %s", row.line, msg)
+	if line > 0 {
+		return fmt.Sprintf("line %d: %s", line, msg)
 	}
 	return msg
 }
 
 // addMedia checks every row, then applies them all to doc's typed entities.
-// When any row fails, doc is left unchanged and every failure is returned.
-func addMedia(doc *gedcom.Document, rows []mediaRow, form, root string) ([]mediaAdded, error) {
+// A row's FORM is its own, else its extension's, else fallback. When any row
+// fails, doc is left unchanged and every failure is returned.
+func addMedia(doc *gedcom.Document, rows []mediaRow, fallback, root string) ([]mediaAdded, error) {
 	type target struct {
 		record *gedcom.Record
 		media  *[]*gedcom.MediaLink
@@ -176,25 +187,33 @@ func addMedia(doc *gedcom.Document, rows []mediaRow, form, root string) ([]media
 	for i, row := range rows {
 		records, err := findRecords(doc, []string{row.to})
 		if err != nil {
-			errs = append(errs, rowError(row, "%v", err))
+			errs = append(errs, rowError(row.line, "%v", err))
 			continue
 		}
 		record := records[0]
 		media := mediaLinks(record)
 		if media == nil {
-			errs = append(errs, rowError(row, "%s is a %s record; want an individual, family or source", record.XRef, record.Type))
+			errs = append(errs, rowError(row.line, "%s is a %s record; want an individual, family or source", record.XRef, record.Type))
 			continue
 		}
 		if msg := checkMediaPath(row.path, root); msg != "" {
-			errs = append(errs, rowError(row, "%s", msg))
+			errs = append(errs, rowError(row.line, "%s", msg))
 			continue
 		}
-		rowForm := form
+		rowForm := row.form
 		if rowForm == "" {
 			rowForm = defaultForm(doc, row.path)
 		}
 		if rowForm == "" {
-			errs = append(errs, rowError(row, "cannot tell the FORM of %s from its extension; pass --form", row.path))
+			rowForm = fallback
+		}
+		if rowForm == "" {
+			hint := "pass --form"
+			if row.line > 0 { // only --batch rows have a line
+
+				hint = "give it in the fourth column or pass --form"
+			}
+			errs = append(errs, rowError(row.line, "cannot tell the FORM of %s from its extension; %s", row.path, hint))
 			continue
 		}
 		targets[i] = target{record: record, media: media, form: rowForm}

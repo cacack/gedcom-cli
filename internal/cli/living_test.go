@@ -124,6 +124,9 @@ func TestRedactLiving(t *testing.T) {
 		// Only Ann's and Bob's lines, and the family of theirs, are counted.
 		{"list tags", []string{"list", living, "tags"}, ExitOK, []string{"2\tINDI.NAME\n", "1\tFAM.MARR.PLAC\n"}},
 		{"list values", []string{"list", "--format", "json", "--tag", "INDI.BIRT.PLAC", living, "values"}, ExitOK, []string{`"value": "Oldtown, Example County"`, `"count": 1`}},
+		// Cleo's (@I3@) birthplace is hidden; Ann's shows.
+		{"list with", []string{"list", "--with", "INDI.BIRT.PLAC", "--with", "INDI.RESI.ADDR", living, "indi"}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue\t\t\n", "\tOldtown, Example County\t"}},
+		{"list with json", []string{"list", "--format", "json", "--with", "INDI.BIRT.PLAC", living, "indi"}, ExitOK, []string{`"INDI.BIRT.PLAC": []`, `"Oldtown, Example County"`}},
 		{"list note", []string{"list", living, "note"}, ExitOK, []string{"@N1@\tLiving\n"}},
 		{"list note json", []string{"list", "--format", "json", living, "note"}, ExitOK, []string{`"xref": "@N1@"`, `"text": "Living"`}},
 		{"extract", []string{"extract", living, "I1", "I3", "I5", "-o", "-"}, ExitOK, []string{"0 @I3@ INDI", "1 NAME Living", "1 CHIL @I5@", "Ann /Example/", "1 JUN 1925"}},
@@ -156,22 +159,31 @@ func TestRedactLiving(t *testing.T) {
 		{"descendants", []string{"descendants", living, "@I1@"}, ExitOK, []string{"1\t@I3@\tLiving", "2\t@I5@\tLiving"}},
 		{"relatives", []string{"relatives", living, "@I3@"}, ExitOK, []string{"self\t\t@I3@\tLiving", "child\t@F2@\t@I5@\tLiving", "Bob /Example/"}},
 		{"duplicates", []string{"duplicates", living, living}, ExitOK, []string{"@I3@\tLiving\t\t\ttrue", "Ann /Example/"}},
-		// put, delete and media add report xrefs only.
+		// put, delete, media add and media set report xrefs only.
 		{"put", []string{"put", living, esme, "-o", out}, ExitOK, []string{"replaced\t@I5@"}},
 		// put-header reports the header only, which is never redacted.
 		{"put-header", []string{"put-header", living, header, "-o", out}, ExitOK, []string{"header replaced"}},
 		{"delete", []string{"delete", "--force", living, "@I5@", "-o", out}, ExitOK, []string{"deleted @I5@", "@F2@\tFAM.CHIL\t@I5@"}},
+		// refs prints xrefs and tag paths only, the same with or without it.
+		{"refs", []string{"refs", living, "@I3@", "@I5@"}, ExitOK, []string{"@F1@\tFAM.CHIL\t@I3@\n", "@F2@\tFAM.WIFE\t@I3@\n", "@F2@\tFAM.CHIL\t@I5@\n"}},
 		{"name", []string{"name", living, "@I3@", "1", "--type", "birth", "-o", out}, ExitOK, []string{"@I3@ name 1", "before\tLiving\n  after\tLiving\n"}},
 		{"name json", []string{"name", "--format", "json", living, "@I1@", "1", "--type", "birth", "-o", out}, ExitOK, []string{`"2 TYPE birth"`, "Ann /Example/"}},
 		// retag reports counts; a finding the edit adds about Cleo is hidden.
 		{"retag", []string{"retag", living, "INDI.RESI", "PROP", "-o", out}, ExitOK, []string{"1 line INDI.RESI renamed PROP"}},
 		{"retag findings", []string{"retag", living, "INDI.RESI.ADDR", "HUSB", "-o", out}, ExitError, []string{"UNEXPECTED_SUBSTRUCTURE\tLiving"}},
+		// move-value hides the value of a row that matched Cleo's address.
+		{"move-value", []string{"move-value", living, livingMoves(t), "-o", out}, ExitOK, []string{"1 line moved", "row 2\tINDI.RESI.ADDR\tLiving\tto PLAC\t", "unmatched\trow 3\t*.PLAC\tNowhere"}},
 		// Cleo's (@I3@) repeated birth is hidden; Ann's (@I1@) repeated death is not.
 		{"repeated-events", []string{"repeated-events", livingWithRepeats(t)}, ExitOK, []string{"repeated\t@I3@\tBIRT\tLiving\tLiving\n", "repeated\t@I1@\tDEAT\t1 DEAT | 2 DATE 9 OCT 1979\t"}},
 		{"repeated-events fold", []string{"repeated-events", "--fold", livingWithRepeats(t), "-o", out}, ExitOK, []string{"folded\t@I3@\tBIRT\tLiving\tLiving\n", "folded\t@I1@\tDEAT\t1 DEAT | 2 DATE 09 Oct 1979"}},
+		// Cleo's (@I3@) repeated name is hidden; Ann's (@I1@) is not.
+		{"repeated-names", []string{"repeated-names", livingWithRepeatedNames(t)}, ExitOK, []string{"repeated\t@I3@\tNAME\tLiving\tLiving\n", "repeated\t@I1@\tNAME\t1 NAME Ann /Example/\t1 NAME ann example\n"}},
+		{"repeated-names fold", []string{"repeated-names", "--fold", livingWithRepeatedNames(t), "-o", out}, ExitOK, []string{"folded\t@I3@\tNAME\tLiving\tLiving\n", "folded\t@I1@\tNAME\t1 NAME ann example\t1 NAME Ann /Example/\n"}},
 		// The fixture has no media, so there is nothing to report.
 		{"media check", []string{"media", "check", "--root", "testdata", living}, ExitOK, nil},
 		{"media add", []string{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg", "-o", out}, ExitOK, []string{"@I3@\t@O1@\tcreated"}},
+		// The fixture has no OBJE record to set, so an empty batch.
+		{"media set", []string{"media", "set", living, "--batch", writeTemp(t, "files.tsv", ""), "-o", out}, ExitOK, nil},
 		// places apply reports counts and the table's unmatched places only.
 		{"places apply", []string{"places", "apply", living, livingPlaces(t), "-o", out}, ExitOK, []string{"3 PLAC rewritten", "3 records changed"}},
 		// The decode finding is on Dirk's line, the note is Cleo's and the
@@ -286,6 +298,20 @@ func livingWithRepeats(t *testing.T) string {
 	return writeTemp(t, "living-repeats.ged", s)
 }
 
+// livingWithRepeatedNames is the living fixture with Ann's (@I1@) and
+// Cleo's (@I3@) names each written a second time, for the repeated-names
+// rows.
+func livingWithRepeatedNames(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(living)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(b), "1 NAME Ann /Example/\n", "1 NAME Ann /Example/\n1 NAME ann example\n", 1)
+	s = strings.Replace(s, "1 NAME Cleo /Example/\n", "1 NAME Cleo /Example/\n1 NAME Cleo /Example/\n2 NOTE Also Cleo\n", 1)
+	return writeTemp(t, "living-repeated-names.ged", s)
+}
+
 // livingWithStyle is the living fixture with a vendor tag under Ann's (@I1@)
 // name and Cleo's (@I3@), for the NAME_VENDOR_TAG style check.
 func livingWithStyle(t *testing.T) string {
@@ -306,6 +332,13 @@ func livingPlaces(t *testing.T) string {
 	return writeTemp(t, "places.tsv", "place\tstandard\nOldtown, Example County\tOldtown\nHiddenvale, Example County\tHiddenvale\n")
 }
 
+// livingMoves is a move-value table for the living fixture that moves
+// Cleo's address to her residence's PLAC, with a row that matches nothing.
+func livingMoves(t *testing.T) string {
+	t.Helper()
+	return writeTemp(t, "moves.tsv", "path\tvalue\taction\nINDI.RESI.ADDR\t12 Secret Lane\tto PLAC\n*.PLAC\tNowhere\tto NOTE\n")
+}
+
 // TestRedactLivingWholeFiles checks the README's rule for the files written
 // with --redact-living: extract and combine redact theirs (TestRedactLiving
 // and TestCombineRedactLiving), and every other write command writes the
@@ -319,7 +352,9 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"delete", "--force", living, "@I5@"},
 		{"name", living, "@I3@", "1", "--type", "birth"},
 		{"retag", living, "INDI.RESI", "PROP"},
+		{"move-value", living, livingMoves(t)},
 		{"media", "add", living, "--to", "@I3@", "--path", "photos/cleo.jpg"},
+		{"media", "set", living, "--batch", writeTemp(t, "files.tsv", "")},
 		{"places", "apply", living, livingPlaces(t)},
 		{"merge-people", living, "@I3@", "@I5@"},
 		{"merge-families", living, "@F1@", "@F2@"},
@@ -327,6 +362,7 @@ func TestRedactLivingWholeFiles(t *testing.T) {
 		{"merge-repositories", sources, "@R1@", "@R2@"},
 		{"convert", living, "--to", "7.0"},
 		{"repeated-events", "--fold", livingWithRepeats(t)},
+		{"repeated-names", "--fold", livingWithRepeatedNames(t)},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out.ged")

@@ -1,0 +1,41 @@
+0 HEAD
+1 SOUR gedcom-cli-test
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @S1@ SOUR
+1 TITL Example register
+0 @I1@ INDI
+1 NAME John /Sample/ Jr.
+2 GIVN John
+2 SURN Sample
+2 NSFX Jr.
+2 SOUR @S1@
+3 PAGE 1
+1 SEX M
+1 NAME john  sample, jr
+2 SOUR @S1@
+3 PAGE 1
+2 SOUR @S1@
+3 PAGE 2
+1 NAME Jack /Sample/
+2 TYPE aka
+1 BIRT
+2 DATE 1 JAN 1900
+0 @I2@ INDI
+1 NAME Ann /Sample/
+2 TYPE birth
+1 NAME Ann /Sample/
+2 TYPE married
+1 NAME Mary Ann /Sample/
+1 BIRT
+2 DATE 2 FEB 1902
+0 @I3@ INDI
+1 NAME Cleo /Sample/
+1 NAME Cleo /Sample/
+2 NOTE Copied from the register
+1 NAME CLEO /SAMPLE/
+1 BIRT
+2 DATE 3 MAR 1903
+0 TRLR

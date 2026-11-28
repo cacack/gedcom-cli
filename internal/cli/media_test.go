@@ -365,6 +365,82 @@ func TestMediaAddBatch(t *testing.T) {
 	}
 }
 
+func TestMediaAddBatchForm(t *testing.T) {
+	file, root := mediaFixture(t, media70GED, "photos/ada.xcf", "photos/ada.png", "photos/ada.zzq", "photos/ada.jpg")
+	batch := filepath.Join(t.TempDir(), "links.tsv")
+	rows := "@I1@\tphotos/ada.xcf\tEditor file\timage/x-xcf\n" +
+		"@I1@\tphotos/ada.png\tAda, 1920\n"
+	if err := os.WriteFile(batch, []byte(rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, _, stderr := run(t, "media", "add", file, "--root", root, "--batch", batch, "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	added := addedLines(t, readFile(t, out), media70GED)
+	want := []string{"1 OBJE @O1@", "1 OBJE @O2@",
+		"0 @O1@ OBJE", "1 FILE photos/ada.xcf", "2 FORM image/x-xcf", "2 TITL Editor file",
+		"0 @O2@ OBJE", "1 FILE photos/ada.png", "2 FORM image/png", "2 TITL Ada, 1920"}
+	if strings.Join(added, "\n") != strings.Join(want, "\n") {
+		t.Errorf("added lines = %q, want %q", added, want)
+	}
+
+	// --form only fills in a row with no FORM of its own and an unknown
+	// extension; an empty title column leaves the title out.
+	rows = "@I1@\tphotos/ada.zzq\n" +
+		"@I1@\tphotos/ada.jpg\n" +
+		"@I1@\tphotos/ada.png\t\timage/x-own\n"
+	if err := os.WriteFile(batch, []byte(rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr = run(t, "media", "add", file, "--root", root, "--batch", batch, "--form", "image/x-zzq", "-o", out)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	added = addedLines(t, readFile(t, out), media70GED)
+	want = []string{"1 OBJE @O1@", "1 OBJE @O2@", "1 OBJE @O3@",
+		"0 @O1@ OBJE", "1 FILE photos/ada.zzq", "2 FORM image/x-zzq",
+		"0 @O2@ OBJE", "1 FILE photos/ada.jpg", "2 FORM image/jpeg",
+		"0 @O3@ OBJE", "1 FILE photos/ada.png", "2 FORM image/x-own"}
+	if strings.Join(added, "\n") != strings.Join(want, "\n") {
+		t.Errorf("with --form, added lines = %q, want %q", added, want)
+	}
+}
+
+func TestMediaAddBatchFormUnknown(t *testing.T) {
+	file, root := mediaFixture(t, media70GED, "photos/ada.png", "photos/scan")
+	batch := filepath.Join(t.TempDir(), "links.tsv")
+	rows := "@I1@\tphotos/ada.png\n" +
+		"@I1@\tphotos/scan\tScan\n"
+	if err := os.WriteFile(batch, []byte(rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--root", root, "--batch", batch, "-o", out)
+	if code != ExitError || stdout != "" {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+	if want := "line 2: cannot tell the FORM of photos/scan from its extension; give it in the fourth column or pass --form"; !strings.Contains(stderr, want) {
+		t.Errorf("stderr missing %q:\n%s", want, stderr)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("output written despite a failed row: %v", err)
+	}
+}
+
+func TestMediaAddFormUnknown(t *testing.T) {
+	file, root := mediaFixture(t, media70GED, "photos/scan")
+	out := filepath.Join(t.TempDir(), "out.ged")
+	code, stdout, stderr := run(t, "media", "add", file, "--root", root, "--to", "@I1@", "--path", "photos/scan", "-o", out)
+	if code != ExitError || stdout != "" {
+		t.Fatalf("exit = %d, stdout = %q", code, stdout)
+	}
+	if want := "cannot tell the FORM of photos/scan from its extension; pass --form"; !strings.Contains(stderr, want) || strings.Contains(stderr, "line ") {
+		t.Errorf("stderr = %q, want %q with no line", stderr, want)
+	}
+}
+
 func TestMediaAddBatchAllOrNone(t *testing.T) {
 	file, root := mediaFixture(t, mediaGED, "photos/cara.jpg")
 	batch := filepath.Join(t.TempDir(), "links.tsv")

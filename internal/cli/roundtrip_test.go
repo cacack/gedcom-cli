@@ -46,6 +46,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		}
 		return []string{"media", "add", in, "--batch", batch, "-o", out}
 	},
+	// An empty batch requests no change.
+	"media set": func(t *testing.T, in, out string) []string {
+		batch := filepath.Join(filepath.Dir(out), "empty.tsv")
+		if err := os.WriteFile(batch, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"media", "set", in, "--batch", batch, "-o", out}
+	},
 	"extract": extractEveryone,
 	// Moving a name to where it is changes nothing.
 	"name": func(_ *testing.T, in, out string) []string {
@@ -59,6 +67,14 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 		}
 		return []string{"places", "apply", in, table, "-o", out}
 	},
+	// A table with no rows requests no change.
+	"move-value": func(t *testing.T, in, out string) []string {
+		table := filepath.Join(filepath.Dir(out), "moves.tsv")
+		if err := os.WriteFile(table, []byte("path\tvalue\taction\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []string{"move-value", in, table, "-o", out}
+	},
 	// A path no line is at requests no change.
 	"retag": func(_ *testing.T, in, out string) []string {
 		return []string{"retag", in, "INDI._NONE", "EVEN", "-o", out}
@@ -66,6 +82,10 @@ var writeCommands = map[string]func(t *testing.T, in, out string) []string{
 	// A file with no repeated events has nothing to fold.
 	"repeated-events": func(_ *testing.T, in, out string) []string {
 		return []string{"repeated-events", "--fold", in, "-o", out}
+	},
+	// A file with no repeated names has nothing to fold.
+	"repeated-names": func(_ *testing.T, in, out string) []string {
+		return []string{"repeated-names", "--fold", in, "-o", out}
 	},
 	// put with an unedited copy of every record, as get prints them.
 	"put": func(t *testing.T, in, out string) []string {

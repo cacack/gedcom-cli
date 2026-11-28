@@ -17,6 +17,16 @@ type pointer struct {
 	To   string `json:"to"`
 }
 
+// line is p as one line of text: holder, tag path and target, tab-separated,
+// with "-" for the header.
+func (p pointer) line() string {
+	from := p.From
+	if from == "" {
+		from = "-"
+	}
+	return strings.Join([]string{oneLine(from), oneLine(p.Path), oneLine(p.To)}, "\t")
+}
+
 // deleteReport is what delete removed and the pointers left to it: they
 // stopped the write, or, with --force, dangle in the output.
 type deleteReport struct {
@@ -159,11 +169,7 @@ func writeDeleteText(w io.Writer, r *deleteReport) error {
 		fmt.Fprintf(&b, "%s (%d)\n", heading, len(r.References))
 	}
 	for _, p := range r.References {
-		from := p.From
-		if from == "" {
-			from = "-"
-		}
-		fmt.Fprintf(&b, "  %s\n", strings.Join([]string{oneLine(from), oneLine(p.Path), oneLine(p.To)}, "\t"))
+		fmt.Fprintf(&b, "  %s\n", p.line())
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

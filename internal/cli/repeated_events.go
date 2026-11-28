@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/cacack/gedcom-go/v3/gedcom"
@@ -30,11 +31,31 @@ type repeatedFoldReport struct {
 	Folded []repeatedFold `json:"folded"`
 }
 
+// repeatedCommand is what repeated-events and repeated-names differ in: the
+// help, the record types searched, and the library calls that find and fold
+// the groups.
+type repeatedCommand struct {
+	use, short, long, example string
+	// types are the record types an <xref> may name, and want says so in an
+	// error.
+	types []gedcom.RecordType
+	want  string
+	find  func(doc *gedcom.Document, xrefs ...string) []repeatedFound
+	fold  func(doc *gedcom.Document, xrefs ...string) (*gedcom.Document, *merge.FoldReport, error)
+}
+
+// repeatedFound is one group the library found: a merge.EventGroup or a
+// merge.NameGroup.
+type repeatedFound struct {
+	XRef    string
+	Members []merge.Substructure
+}
+
 func newRepeatedEventsCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "repeated-events <file> [<xref>...] [--fold -o <out>]",
-		Short: "Report events a record holds twice, and fold them into one, writing a new file",
-		Long: `Report the substructures of one individual or family record that record the
+	return newRepeatedCmd(repeatedCommand{
+		use:   "repeated-events <file> [<xref>...] [--fold -o <out>]",
+		short: "Report events a record holds twice, and fold them into one, writing a new file",
+		long: `Report the substructures of one individual or family record that record the
 same event: a birth written twice, say, as a merge made without --fold-events
 or an import can leave it. Every individual and family is searched, or only
 the records <xref> names.
@@ -43,36 +64,69 @@ The rule is the one merge-people --fold-events folds by:
 
 ` + sameEventHelp + `
 
-The report lists one group per line, tab-separated:
-
-  repeated  xref, tag, lines...
-                          the substructures of one record that record the
-                          same event, in file order, each as its lines
-
-With --fold, each group is folded into its first member, as --fold-events
-folds drop's event into keep's: the first member's lines stay, and each line
-of the others it lacks (a citation, a note, a place) is added; the others are
-removed. The result is written to --output; the input file is never changed,
-and every record with nothing to fold is written exactly as read. Folding the
-output again folds nothing. The report then lists, instead:
-
-  folded    xref, tag, lines, into
-                          a substructure removed, folded into the first of
-                          its group; into is that one once every fold into
-                          it is done
+` + repeatedReportHelp("the substructures of one record that record the\nsame event", "a citation, a note, a place") + `
 
 A substructure's lines are joined with " | ". With --redact-living, those of
 a presumed-living person, and of a family with one as a spouse, read Living;
 the file written is not redacted.
 
--o is required with --fold, and only then, and may not name file. An
-existing output file is replaced only once the whole result is written. With
--o - the GEDCOM goes to stdout and the report to stderr.`,
-		Example: `  gedcom repeated-events family.ged
+` + repeatedOutputHelp,
+		example: `  gedcom repeated-events family.ged
   gedcom repeated-events family.ged @I1@ @F2@
   gedcom repeated-events --fold family.ged -o folded.ged
   gedcom repeated-events --format json family.ged | jq '.[] | select(.tag == "BIRT")'`,
-		Args: minArgs(1),
+		types: []gedcom.RecordType{gedcom.RecordTypeIndividual, gedcom.RecordTypeFamily},
+		want:  "an individual or a family",
+		find: func(doc *gedcom.Document, xrefs ...string) []repeatedFound {
+			var found []repeatedFound
+			for _, g := range merge.RepeatedEvents(doc, xrefs...) {
+				found = append(found, repeatedFound{XRef: g.XRef, Members: g.Members})
+			}
+			return found
+		},
+		fold: merge.FoldRepeatedEvents,
+	})
+}
+
+// repeatedReportHelp is the help on the report and on --fold that
+// repeated-events and repeated-names share; group is what one group is, as
+// the report lists it, one "\n" per wrapped line, and lacks the lines a first
+// member may gain.
+func repeatedReportHelp(group, lacks string) string {
+	const indent = "                          " // the column of "xref" above
+	group = strings.ReplaceAll(group, "\n", "\n"+indent)
+	return `The report lists one group per line, tab-separated:
+
+  repeated  xref, tag, lines...
+` + indent + group + `, in file order, each as its lines
+
+With --fold, each group is folded into its first member: the first member's
+lines stay, and each line of the others it lacks is added (` + lacks + `),
+so a line both hold identically is kept once; the others are removed. The
+result is written to --output; the input file is never changed, and every
+record with nothing to fold is written exactly as read. Folding the output
+again folds nothing. The report then lists, instead:
+
+  folded    xref, tag, lines, into
+                          a substructure removed, folded into the first of
+                          its group; into is that one once every fold into
+                          it is done`
+}
+
+// repeatedOutputHelp is the help on -o that repeated-events and
+// repeated-names share.
+const repeatedOutputHelp = `-o is required with --fold, and only then, and may not name file. An
+existing output file is replaced only once the whole result is written. With
+-o - the GEDCOM goes to stdout and the report to stderr.`
+
+// newRepeatedCmd builds repeated-events or repeated-names from c.
+func newRepeatedCmd(c repeatedCommand) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     c.use,
+		Short:   c.short,
+		Long:    c.long,
+		Example: c.example,
+		Args:    minArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := outputFormat(cmd)
 			if err != nil {
@@ -100,7 +154,7 @@ existing output file is replaced only once the whole result is written. With
 				return err
 			}
 			doc := res.Document
-			xrefs, err := repeatedTargets(doc, args[1:])
+			xrefs, err := repeatedTargets(doc, args[1:], c.types, c.want)
 			if err != nil {
 				return err
 			}
@@ -112,14 +166,14 @@ existing output file is replaced only once the whole result is written. With
 			}
 
 			if !fold {
-				groups := newRepeatedGroups(merge.RepeatedEvents(doc, xrefs...), hidden)
+				groups := newRepeatedGroups(c.find(doc, xrefs...), hidden)
 				if format == formatJSON {
 					return writeJSON(cmd.OutOrStdout(), groups)
 				}
 				return writeRepeatedText(cmd.OutOrStdout(), groups)
 			}
 
-			folded, libReport, err := merge.FoldRepeatedEvents(doc, xrefs...)
+			folded, libReport, err := c.fold(doc, xrefs...)
 			if err != nil {
 				return err
 			}
@@ -151,17 +205,18 @@ existing output file is replaced only once the whole result is written. With
 	return cmd
 }
 
-// repeatedTargets is the xrefs of the records args names, each an individual
-// or a family; none when args is empty, which searches every record.
-func repeatedTargets(doc *gedcom.Document, args []string) ([]string, error) {
+// repeatedTargets is the xrefs of the records args names, each of one of
+// types (want says which); none when args is empty, which searches every
+// record.
+func repeatedTargets(doc *gedcom.Document, args []string, types []gedcom.RecordType, want string) ([]string, error) {
 	records, err := findRecords(doc, args)
 	if err != nil {
 		return nil, err
 	}
 	xrefs := make([]string, 0, len(records))
 	for _, record := range records {
-		if record.Type != gedcom.RecordTypeIndividual && record.Type != gedcom.RecordTypeFamily {
-			return nil, fmt.Errorf("%s is a %s record; want an individual or a family", record.XRef, record.Type)
+		if !slices.Contains(types, record.Type) {
+			return nil, fmt.Errorf("%s is a %s record; want %s", record.XRef, record.Type, want)
 		}
 		xrefs = append(xrefs, record.XRef)
 	}
@@ -170,7 +225,7 @@ func repeatedTargets(doc *gedcom.Document, args []string) ([]string, error) {
 
 // newRepeatedGroups is the library's groups as the report prints them, with
 // the lines of the records hidden names redacted.
-func newRepeatedGroups(groups []merge.EventGroup, hidden map[string]bool) []repeatedGroup {
+func newRepeatedGroups(groups []repeatedFound, hidden map[string]bool) []repeatedGroup {
 	out := make([]repeatedGroup, 0, len(groups))
 	for _, g := range groups {
 		group := repeatedGroup{XRef: g.XRef, Tag: g.Members[0].Tags[0].Tag}
