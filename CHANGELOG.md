@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.0](https://github.com/cacack/gedcom-cli/compare/v0.8.0...v0.9.0) (2026-11-28)
+
+
+### Features
+
+* add list --with, which adds chosen tag paths as columns ([e9baf30](https://github.com/cacack/gedcom-cli/commit/e9baf30e74aeee3495cb524743dcdce16d84aec0))
+* add media set, which sets the FILE of an existing OBJE record ([cef7d43](https://github.com/cacack/gedcom-cli/commit/cef7d43a0c636097477c6c4dfd42fafcd4053b09))
+* add move-value, which moves event lines' values into their PLAC, ADDR or a NOTE from a table ([69ff9cf](https://github.com/cacack/gedcom-cli/commit/69ff9cfc878508d34eef0887ac25b250c986f242))
+* add refs, which lists the records that point at an xref ([734668b](https://github.com/cacack/gedcom-cli/commit/734668bdbc79ef5210ffc3f241a1950b0bc25792))
+* add repeated-events, which reports and folds events a record holds twice ([d755280](https://github.com/cacack/gedcom-cli/commit/d755280af55d92cdc4fbec6a192c1ef03076dd69))
+* add repeated-names, which reports and folds names a person holds twice ([d187a65](https://github.com/cacack/gedcom-cli/commit/d187a650a41d92ab5a6811f016492eca52020c8d))
+* add retag, the bulk rename of every line at one tag path ([b765424](https://github.com/cacack/gedcom-cli/commit/b765424ceb8c4021c599f39a08afd4921ca5730c))
+* add validate --style and --skip-style for personal-name style checks ([dc8750f](https://github.com/cacack/gedcom-cli/commit/dc8750f0aa49a91704f1d91401803560f296d4c9))
+* let media add --batch rows carry their own FORM ([ad24046](https://github.com/cacack/gedcom-cli/commit/ad24046fa7193091e2c5e5c8fa00802f30c73f76))
+
+
+### Bug Fixes
+
+* refuse prepend PLAC onto a PLAC with a FORM or TRAN, and reject an empty move-value table ([42d7299](https://github.com/cacack/gedcom-cli/commit/42d7299fbacf30a298610d84084bc9bbc5d91e3d))
+* reject a --with path given twice, and test every record type's columns ([7ca4655](https://github.com/cacack/gedcom-cli/commit/7ca465574c8806c9b443b0f6406499075f34c173))
+* report the FILE media set leaves, and test its FORM handling ([80965ed](https://github.com/cacack/gedcom-cli/commit/80965ed3d2b6b57994b6d526b54dac42046873c0))
+
 ## [0.8.0](https://github.com/cacack/gedcom-cli/compare/v0.7.0...v0.8.0) (2026-11-25)
 
 
